@@ -1,0 +1,54 @@
+# CodeAppJS Extension
+
+CodeAppJS Extension is a VS Code wrapper around Power Platform CLI workflows for code-first apps. The extension no longer hosts an agent panel or chat harness. It now exposes PAC-driven setup, authentication, environment switching, data source sync, debugger toggling, and deploy actions directly in the editor chrome.
+
+This extension is built on [codeapp.js](https://codeappjs.com), which is aimed at developers building Power Apps with HTML, CSS, and JavaScript in a code-first workflow.
+
+## What You Get
+
+- A lightweight Activity Bar view with title-bar actions for setup, data sources, debugger, and deploy.
+- Status bar items for Power Platform authentication and environment switching.
+- Project setup that copies starter files into your workspace and updates `power.config.json` through native VS Code input prompts.
+- Connection reference syncing against the active environment.
+- One-click deploy with `pac code push`, including app URL detection and `appId` update when available.
+
+## Requirements
+
+- VS Code `1.95.0` or newer.
+- Power Platform CLI (`pac`).
+- An open workspace folder.
+
+The extension uses the CLI bundled with the Power Platform Tools extension when it is available. Otherwise it falls back to `pac` on your system `PATH`.
+
+## Quick Start
+
+1. Open the folder that will contain your Power Platform code-first app.
+2. Click the `Auth` status bar item to start `pac auth create`.
+3. Click the environment status bar item to select the target environment.
+4. Open the `CodeAppJS` Activity Bar view.
+5. Use the view title actions for `Setup Project`, `Add Data Sources`, `Toggle Debugger`, and `Deploy`.
+
+## Command Surface
+
+| Command | What it does |
+| --- | --- |
+| `CodeAppJS: Setup Project` | Copies the bundled template files into the workspace and updates `power.config.json`. |
+| `CodeAppJS: Authenticate` | Starts `pac auth create` in a terminal so you can sign in to Power Platform. |
+| `CodeAppJS: Change Environment` | Lists environments, switches the active org selection, stores the selection locally, and updates `power.config.json` when possible. |
+| `CodeAppJS: Add Data Sources` | Reads `connectionReferences` from `power.config.json`, inspects available PAC connections, and updates reference details. |
+| `CodeAppJS: Toggle Debugger` | Adds or removes the codeapp debugger snippet from the current build entry point. |
+| `CodeAppJS: Deploy` | Runs `pac code push`, reports progress, and stores the detected `appId` in `power.config.json` when available. |
+
+## Setup Behavior
+
+When you run project setup, the extension copies files from its bundled template folder into your workspace.
+
+- Existing files are not overwritten.
+- If `power.config.json` is copied, the extension asks for app metadata and environment information with native input boxes.
+- If the configured build entry point exists, the HTML `<title>` is updated to match the app display name.
+
+## Notes
+
+- PAC authentication must be completed before environment listing, data source sync, or deploy can succeed.
+- Deploy captures command output, looks for the Power Apps URL, and stores the detected `appId` in `power.config.json` when possible.
+- Data source sync reads `connectionReferences`, selects the configured environment if one is set, inspects available connections, and updates reference metadata in `power.config.json`.

@@ -1,0 +1,186 @@
+{
+  "name": "codeappjsext",
+  "displayName": "CodeAppJS",
+  "description": "Power Platform CLI workflows for code-first apps",
+  "version": "1.1.2",
+  "icon": "codeapp-js.png",
+  "publisher": "PowerDevBox",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "power platform",
+    "code apps",
+    "dataverse",
+    "pac cli",
+    "Power Apps"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeappjsext.setup",
+        "title": "CodeAppJS: Setup Project",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "codeappjsext.auth",
+        "title": "CodeAppJS: Authenticate",
+        "icon": "$(account)"
+      },
+      {
+        "command": "codeappjsext.environment",
+        "title": "CodeAppJS: Change Environment",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "codeappjsext.connections",
+        "title": "CodeAppJS: Add Dataverse Schema",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "codeappjsext.debugger",
+        "title": "CodeAppJS: Toggle Debugger",
+        "icon": "$(debug-alt-small)"
+      },
+      {
+        "command": "codeappjsext.deploy",
+        "title": "CodeAppJS: Deploy",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "codeappjsext.toggleButtonVisibility",
+        "title": "CodeAppJS: Toggle Button Visibility",
+        "icon": "$(eye)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "codeappjsext.connections",
+          "when": "codeappjsext.buttonsVisible",
+          "group": "navigation@1"
+        },
+        {
+          "command": "codeappjsext.debugger",
+          "when": "codeappjsext.buttonsVisible",
+          "group": "navigation@2"
+        },
+        {
+          "command": "codeappjsext.deploy",
+          "when": "codeappjsext.buttonsVisible",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "chatAgents": [
+      {
+        "path": "./resources/AI/codeapp.agent.md",
+        "sessionTypes": [
+          "local"
+        ]
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./resources/AI/Skills/autoreview/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/connections/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/dataverse/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/environment-variables/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/frontend-design/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/jira/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/keyvault/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/office365-groups/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/office365-outlook/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/office365-users/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/sharepoint/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/sql/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/start/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/Skills/teams/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "lint": "eslint src --ext js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+  }
+}
