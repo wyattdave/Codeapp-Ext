@@ -1,0 +1,27 @@
+{
+  "name": "codeapp-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone JS CLI for Power Apps Code Apps. Wraps @microsoft/power-apps-actions and removes the dependency on @microsoft/power-apps-cli / npx power-apps.",
+  "bin": {
+    "codeapp": "./bin/codeapp.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node ./bin/codeapp.js"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^3.6.3",
+    "@microsoft/power-apps-actions": "^1.4.0",
+    "commander": "^10.0.1",
+    "open": "^8.4.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

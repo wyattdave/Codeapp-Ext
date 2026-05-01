@@ -1,5 +1,5 @@
 const vscode = require('vscode');
-const { checkAndInstallPac } = require('./pacCli');
+const { checkAndInstallCodeAppCli } = require('./codeappCli');
 const { setupProject, authenticate, changeEnvironment, deploy, toggleDebugger, addDataverseSchema } = require('./commands');
 
 const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
@@ -84,7 +84,7 @@ function createStatusBarItems(oContext) {
 }
 
 async function activate(oContext) {
-  checkAndInstallPac();
+  checkAndInstallCodeAppCli();
 
   await vscode.commands.executeCommand('setContext', 'codeappjsext.buttonsVisible', getButtonsVisible(oContext));
 

@@ -1,7 +1,8 @@
 const vscode = require('vscode');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
-const { runPacCommand, getWorkspaceRoot, getPacCommand } = require('./pacCli');
+const { runCodeAppCommand, ensureCodeAppCliReady, getCodeAppCliCommand, getWorkspaceRoot } = require('./codeappCli');
 
 let oConnectionSyncOutput = null;
 let oCommandOutputs = {};
@@ -89,9 +90,10 @@ function createCommandReporter(oPanel, sTitle, sInitialStatus, oOptions = {}) {
   };
 }
 
-async function runLoggedPacCommand(sCommand, oReporter) {
-  oReporter.log('> pac ' + sCommand);
-  return await runPacCommand(sCommand, {
+async function runLoggedCodeAppCommand(sCommand, oReporter, oRunOptions = {}) {
+  oReporter.log('> codeapp ' + sCommand);
+  return await runCodeAppCommand(sCommand, {
+    cwd: oRunOptions.cwd,
     onStdout: (sChunk) => {
       oReporter.raw(sChunk);
     },
@@ -872,6 +874,25 @@ function ensureDirectoryExists(sDirectoryPath) {
   }
 }
 
+function getAgentDirectory() {
+  let sRoot = getWorkspaceRoot();
+  if (!sRoot) {
+    return '';
+  }
+
+  return path.join(sRoot, S_AGENT_DIRECTORY_RELATIVE_PATH);
+}
+
+function listFilesInDirectory(sDirectoryPath) {
+  if (!sDirectoryPath || !fs.existsSync(sDirectoryPath)) {
+    return [];
+  }
+
+  return fs.readdirSync(sDirectoryPath, { withFileTypes: true })
+    .filter((oEntry) => oEntry.isFile())
+    .map((oEntry) => path.join(sDirectoryPath, oEntry.name));
+}
+
 function toWorkspaceRelativePath(sFullPath) {
   let sRoot = getWorkspaceRoot();
   if (!sRoot || !sFullPath) {
@@ -899,6 +920,25 @@ function moveFileOverwrite(sSourcePath, sDestinationPath) {
   }
 }
 
+function moveDataverseSchemaFilesToAgentFolder(sSourceDirectoryPath, sAgentDirectoryPath) {
+  ensureDirectoryExists(sAgentDirectoryPath);
+
+  let aSourceFiles = listFilesInDirectory(sSourceDirectoryPath);
+  return aSourceFiles.map((sSourcePath) => {
+    let sDestinationPath = path.join(sAgentDirectoryPath, path.basename(sSourcePath));
+    moveFileOverwrite(sSourcePath, sDestinationPath);
+    return sDestinationPath;
+  });
+}
+
+function removeDirectoryIfExists(sDirectoryPath) {
+  if (!sDirectoryPath || !fs.existsSync(sDirectoryPath)) {
+    return;
+  }
+
+  fs.rmSync(sDirectoryPath, { recursive: true, force: true });
+}
+
 async function addDataverseSchema(oPanel = null, sTableName = '') {
   let sResolvedTableName = String(sTableName || '').trim();
   if (!sResolvedTableName) {
@@ -911,6 +951,11 @@ async function addDataverseSchema(oPanel = null, sTableName = '') {
     return;
   }
 
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
   let oReporter = createCommandReporter(oPanel, 'Dataverse Schema', 'Generating Dataverse schema...');
 
   let fnRunDataverseSchema = async () => {
@@ -919,40 +964,70 @@ async function addDataverseSchema(oPanel = null, sTableName = '') {
       throw new Error('No workspace folder open.');
     }
 
-    let sSchemaDirectory = getDataverseSchemaDirectory();
-    let aBeforeFiles = listDataverseSchemaFiles(sSchemaDirectory);
+    let sWorkspacePowerConfigPath = getPowerConfigPath();
+    let sWorkspacePowerDirectory = path.join(sRoot, '.power');
+    if (!sWorkspacePowerConfigPath || !fs.existsSync(sWorkspacePowerConfigPath)) {
+      throw new Error('power.config.json was not found in the workspace root.');
+    }
+
+    let sTempWorkingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'codeapp-dataverse-'));
+    let sTempPowerConfigPath = path.join(sTempWorkingDirectory, 'power.config.json');
+    let sTempDataverseSchemaDirectory = path.join(sTempWorkingDirectory, '.power', 'schemas', 'dataverse');
+    let sTempPowerDirectory = path.join(sTempWorkingDirectory, '.power');
+    let sTempSrcDirectory = path.join(sTempWorkingDirectory, 'src');
+    let sAgentDirectory = getAgentDirectory();
 
     oReporter.start();
-    oReporter.status('Running pac code add-data-source...');
-    oReporter.log('Preparing Dataverse schema for table: ' + sResolvedTableName);
+    oReporter.status('Running codeapp add-data-source...');
+    oReporter.log('Adding Dataverse data source for table: ' + sResolvedTableName);
 
     try {
-      await runLoggedPacCommand('code add-data-source -a dataverse -t ' + sResolvedTableName, oReporter);
-    } catch (oError) {
-      if (!isExistingDataSourceError(oError)) {
-        throw new Error(oError.message || String(oError));
+      fs.copyFileSync(sWorkspacePowerConfigPath, sTempPowerConfigPath);
+
+      try {
+        await runLoggedCodeAppCommand(
+          'add-data-source --api-id dataverse --resource-name ' + sResolvedTableName,
+          oReporter,
+          { cwd: sTempWorkingDirectory }
+        );
+      } catch (oError) {
+        let sError = typeof oError === 'string' ? oError : (oError && oError.message ? oError.message : String(oError));
+        if (!isExistingDataSourceError(sError)) {
+          throw new Error(sError);
+        }
+
+        oReporter.log('Data source already exists.');
       }
 
-      oReporter.log('Data source already exists; checking for an updated schema file.');
-    }
+      if (!fs.existsSync(sTempPowerConfigPath)) {
+        throw new Error('Generated power.config.json was not found after add-data-source completed.');
+      }
 
-    let oGeneratedFile = findGeneratedDataverseSchemaFile(sSchemaDirectory, sResolvedTableName, aBeforeFiles);
-    if (!oGeneratedFile) {
-      throw new Error('PAC completed, but no schema file was found in .power/schemas/dataverse/.');
-    }
+      fs.copyFileSync(sTempPowerConfigPath, sWorkspacePowerConfigPath);
+      oReporter.log('Updated power.config.json.');
 
-    let sAgentDirectory = path.join(sRoot, S_AGENT_DIRECTORY_RELATIVE_PATH);
-    ensureDirectoryExists(sAgentDirectory);
+      oReporter.status('Moving generated Dataverse schema files...');
+      let aMovedFiles = moveDataverseSchemaFilesToAgentFolder(sTempDataverseSchemaDirectory, sAgentDirectory);
+      if (aMovedFiles.length === 0) {
+        throw new Error('No Dataverse schema files were generated.');
+      }
 
-    let sDestinationPath = path.join(sAgentDirectory, oGeneratedFile.sName);
-    oReporter.status('Moving schema into agent folder...');
-    moveFileOverwrite(oGeneratedFile.sFullPath, sDestinationPath);
-    oReporter.log('Moved schema to ' + toWorkspaceRelativePath(sDestinationPath) + '.');
+      aMovedFiles.forEach((sMovedPath) => {
+        oReporter.log('Moved schema file to ' + toWorkspaceRelativePath(sMovedPath));
+      });
 
-    let sMessage = 'Dataverse schema ready: ' + toWorkspaceRelativePath(sDestinationPath);
-    oReporter.finish('done', sMessage);
-    if (!oReporter.hasPanel()) {
-      vscode.window.showInformationMessage(sMessage);
+      oReporter.status('Cleaning temporary generation folders...');
+      removeDirectoryIfExists(sWorkspacePowerDirectory);
+      oReporter.log('Deleted workspace .power folder.');
+      let sMessage = 'Dataverse schema ready for table: ' + sResolvedTableName + ' (' + aMovedFiles.length + ' file' + (aMovedFiles.length === 1 ? '' : 's') + ' moved to agent).';
+      oReporter.finish('done', sMessage);
+      if (!oReporter.hasPanel()) {
+        vscode.window.showInformationMessage(sMessage);
+      }
+    } finally {
+      removeDirectoryIfExists(sTempPowerDirectory);
+      removeDirectoryIfExists(sTempSrcDirectory);
+      removeDirectoryIfExists(sTempWorkingDirectory);
     }
   };
 
@@ -1115,112 +1190,111 @@ async function openPowerConfigFile(sConfigPath) {
 }
 
 async function authenticate() {
-  let oReporter = createCommandReporter(null, 'Authentication', 'Opening Power Platform authentication...');
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Authentication', 'Opening codeapp authentication...');
   oReporter.start();
-  let oTerminal = vscode.window.createTerminal('PAC Auth');
+  let sCommand = getCodeAppCliCommand();
+  let oTerminal = vscode.window.createTerminal('CodeApp Auth');
   oTerminal.show();
-  oTerminal.sendText('pac auth create');
-  let sMessage = 'Opened the PAC Auth terminal. Follow the browser prompts to authenticate with Power Platform.';
-  oReporter.log('> pac auth create');
+  /* Clear cached tokens, then trigger any command to start the device-code flow. */
+  oTerminal.sendText(sCommand + ' logout');
+  oTerminal.sendText(sCommand + ' list-codeapps');
+  let sMessage = 'Opened the CodeApp Auth terminal. Follow the device-code prompt to authenticate.';
+  oReporter.log('> codeapp logout');
+  oReporter.log('> codeapp list-codeapps');
   oReporter.log(sMessage);
-  oReporter.finish('working', 'Authentication started. Complete sign-in in the browser and terminal.');
+  oReporter.finish('working', 'Authentication started. Complete sign-in in the browser.');
   if (!oReporter.hasPanel()) {
-    vscode.window.showInformationMessage('Follow the browser prompts to authenticate with Power Platform.');
+    vscode.window.showInformationMessage(sMessage);
   }
 }
 
 async function changeEnvironment(oContext = null) {
-  try {
-    let aEnvironments = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Loading Power Platform environments...',
-        cancellable: false
-      },
-      async () => {
-        let sWhoOutput = await runPacCommand('env who --json').catch(() => '');
-        if (!sWhoOutput) {
-          sWhoOutput = await runPacCommand('env who').catch(() => '');
-        }
-        let sJsonOutput = await runPacCommand('env list --json').catch(() => '');
-        let aResolvedEnvironments = parseEnvironmentListJsonOutput(sJsonOutput, sWhoOutput);
+  let sStoredEnvironmentId = getStoredEnvironmentId(oContext);
+  let sInitialValue = sStoredEnvironmentId;
 
-        if (aResolvedEnvironments.length === 0) {
-          let sTextOutput = await runPacCommand('env list');
-          aResolvedEnvironments = parseEnvironmentListTextOutput(sTextOutput, sWhoOutput);
-        }
-
-        return aResolvedEnvironments;
+  if (!sInitialValue) {
+    try {
+      let { oConfig } = getPowerConfig();
+      let sConfigEnvironmentId = oConfig && oConfig.environmentId ? String(oConfig.environmentId).trim() : '';
+      if (sConfigEnvironmentId && sConfigEnvironmentId.indexOf('<') === -1) {
+        sInitialValue = sConfigEnvironmentId;
       }
-    );
-
-    if (aEnvironments.length === 0) {
-      vscode.window.showWarningMessage('No environments found. Run Auth first.');
-      return;
+    } catch (oError) {
+      /* power.config.json may not exist yet; fall through. */
     }
-
-    let aItems = aEnvironments.map((oEnv) => ({
-      label: (oEnv.bActive ? '* ' : '') + oEnv.sName,
-      description: oEnv.sUrl,
-      sId: oEnv.sId
-    }));
-
-    let oSelected = await vscode.window.showQuickPick(aItems, {
-      placeHolder: 'Select a Power Platform environment'
-    });
-
-    if (oSelected) {
-      await applyEnvironmentSelection(oSelected.sId, oContext);
-    }
-  } catch (oError) {
-    vscode.window.showErrorMessage('Failed to list environments: ' + oError);
   }
+
+  let sEnvironmentId = await vscode.window.showInputBox({
+    title: 'Change Environment',
+    prompt: 'Power Platform environment ID',
+    placeHolder: '00000000-0000-0000-0000-000000000000',
+    value: sInitialValue || '',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => {
+      let sTrimmed = String(sValue || '').trim();
+      if (!sTrimmed) {
+        return 'Environment ID is required.';
+      }
+      if (sTrimmed.indexOf('<') !== -1) {
+        return 'Replace the placeholder with a valid environment ID.';
+      }
+      return null;
+    }
+  });
+
+  if (sEnvironmentId === undefined) {
+    return;
+  }
+
+  await applyEnvironmentSelection(sEnvironmentId.trim(), oContext);
 }
 
 async function applyEnvironmentSelection(sEnvId, oContext = null) {
   let sNormalizedEnvId = normalizeEnvironmentId(sEnvId);
-  let sPacSelectableEnvironmentId = getPacSelectableEnvironmentId(sNormalizedEnvId);
 
-  if (!sNormalizedEnvId || !sPacSelectableEnvironmentId) {
+  if (!sNormalizedEnvId) {
     vscode.window.showErrorMessage('Failed to switch environment: no valid environment id was provided.');
-    return;
-  }
-
-  try {
-    await runPacCommand('org select --environment ' + sPacSelectableEnvironmentId);
-  } catch (oError) {
-    vscode.window.showErrorMessage('Failed to switch environment: ' + oError);
     return;
   }
 
   try {
     await storeEnvironmentId(oContext, sNormalizedEnvId);
   } catch (oError) {
-    vscode.window.showWarningMessage('Environment switched, but the saved environment could not be stored locally: ' + oError.message);
+    vscode.window.showWarningMessage('Environment could not be stored locally: ' + oError.message);
   }
 
   try {
     let bUpdated = updatePowerConfigEnvironmentId(sNormalizedEnvId);
     if (bUpdated) {
-      vscode.window.showInformationMessage('Environment switched and power.config.json updated.');
+      vscode.window.showInformationMessage('Environment updated in power.config.json.');
       return;
     }
   } catch (oError) {
-    vscode.window.showErrorMessage('Environment switched, but power.config.json could not be updated: ' + oError.message);
+    vscode.window.showErrorMessage('power.config.json could not be updated: ' + oError.message);
     return;
   }
 
-  vscode.window.showInformationMessage('Environment switched.');
+  vscode.window.showInformationMessage('Environment set to ' + sNormalizedEnvId + '.');
 }
 
 async function deploy() {
-  let oReporter = createCommandReporter(null, 'Deploy', 'Starting pac code push...', { bShowOnStart: false });
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Deploy', 'Starting codeapp push...', { bShowOnStart: false });
 
   let fnRunDeploy = async () => {
     oReporter.start();
-    oReporter.status('Running pac code push...');
+    oReporter.status('Running codeapp push...');
     oReporter.log('Starting deploy...');
-    let sDeployOutput = await runLoggedPacCommand('code push', oReporter);
+    let sDeployOutput = await runLoggedCodeAppCommand('push', oReporter);
     let sAppUrl = extractPowerAppsUrl(sDeployOutput);
     let sAppId = getAppIdFromPowerAppsUrl(sAppUrl);
     let oAppIdUpdateResult = null;
@@ -1262,7 +1336,7 @@ async function deploy() {
 
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Deploying with pac code push...', cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: 'Deploying with codeapp push...', cancellable: false },
       async () => {
         await fnRunDeploy();
       }
@@ -1277,216 +1351,4 @@ async function deploy() {
   }
 }
 
-async function syncConnections() {
-  try {
-    let oOutput = getConnectionSyncOutput();
-    oOutput.clear();
-
-    let oReporter = createCommandReporter(null, 'Connection Sync', 'Starting connection sync...');
-    oReporter.start();
-    oReporter.log('Starting connection sync...');
-
-    let { sConfigPath, oConfig } = getPowerConfig();
-    let oConnectionReferences = oConfig.connectionReferences || {};
-    let aReferenceEntries = Object.entries(oConnectionReferences);
-
-    if (aReferenceEntries.length === 0) {
-      let sMessage = 'No connectionReferences were found in power.config.json.';
-      oReporter.log(sMessage);
-      oReporter.finish('warning', sMessage);
-      if (!oReporter.hasPanel()) {
-        vscode.window.showWarningMessage(sMessage);
-      }
-      return;
-    }
-
-    let sEnvironmentId = normalizeEnvironmentId(oConfig.environmentId || '');
-    let bHasConcreteEnvironment = sEnvironmentId && sEnvironmentId.indexOf('<') === -1;
-    let sEnvironmentUrl = '';
-
-    let oSummary = {
-      aSynced: [],
-      aExisting: [],
-      aMissing: [],
-      aErrors: [],
-      iUpdatedIds: 0
-    };
-
-    let fnRunSync = async (oProgress) => {
-        if (bHasConcreteEnvironment) {
-          let sPacSelectableEnvironmentId = getPacSelectableEnvironmentId(sEnvironmentId);
-          oReporter.status('Selecting configured environment...');
-          if (oProgress) {
-            oProgress.report({ message: 'Selecting configured environment...' });
-          }
-          try {
-            oReporter.log('Selecting environment: ' + sEnvironmentId);
-            await runLoggedPacCommand('org select --environment ' + sPacSelectableEnvironmentId, oReporter);
-          } catch (oError) {
-            throw new Error('Failed to select environment ' + sEnvironmentId + ': ' + oError);
-          }
-        }
-
-        try {
-          oReporter.status('Reading active environment...');
-          let sWhoOutput = await runLoggedPacCommand('env who', oReporter);
-          sEnvironmentUrl = getEnvironmentUrlFromWhoOutput(sWhoOutput);
-          oReporter.log('Active environment URL: ' + (sEnvironmentUrl || 'not found'));
-        } catch (oError) {
-          oReporter.log('Failed to read active environment URL: ' + oError);
-        }
-
-        oReporter.status('Reading available connections...');
-        if (oProgress) {
-          oProgress.report({ message: 'Reading available connections...' });
-        }
-        let sConnectionOutput = await runLoggedPacCommand('connection list', oReporter);
-        oReporter.log('connection list output received.');
-        let aConnections = parseConnectionListOutput(sConnectionOutput);
-
-        if (aConnections.length === 0) {
-          throw new Error('No connections could be parsed from pac connection list. Output: ' + sConnectionOutput.substring(0, 500));
-        }
-
-        oReporter.log('Parsed ' + aConnections.length + ' connection(s).');
-
-        let bConfigChanged = false;
-        let iTotal = aReferenceEntries.length;
-
-        for (let iIndex = 0; iIndex < aReferenceEntries.length; iIndex++) {
-          let [sReferenceName, oReference] = aReferenceEntries[iIndex];
-          let sApiName = getApiNameFromReference(oReference);
-          let sDisplayName = oReference.displayName || sReferenceName;
-
-          oReporter.status('Syncing ' + sDisplayName + '...');
-          if (oProgress) {
-            oProgress.report({
-              increment: 100 / iTotal,
-              message: 'Syncing ' + sDisplayName + '...'
-            });
-          }
-
-          if (!sApiName || !oReference.id) {
-            oSummary.aErrors.push(sDisplayName + ': missing connector id in power.config.json');
-            oReporter.log('Skipping ' + sDisplayName + ': missing connector id in power.config.json.');
-            continue;
-          }
-
-          let oConnection = findConnectedConnection(aConnections, oReference.id);
-          if (!oConnection) {
-            oReporter.log('No connected connection found for ' + sDisplayName + ' (' + oReference.id + ').');
-            oSummary.aMissing.push(sDisplayName);
-            continue;
-          }
-
-          oReporter.log('Matched ' + sDisplayName + ' to connection ' + oConnection.sId + '.');
-
-          if (oReference.sharedConnectionId !== oConnection.sId) {
-            oReference.sharedConnectionId = oConnection.sId;
-            oSummary.iUpdatedIds++;
-            bConfigChanged = true;
-          }
-
-          try {
-            let sAddDataSourceCommand = 'code add-data-source -a ' + sApiName + ' -c ' + oConnection.sId;
-            if (sEnvironmentUrl) {
-              sAddDataSourceCommand = sAddDataSourceCommand + ' --environment ' + sEnvironmentUrl;
-            }
-
-            oReporter.log('Running: ' + sAddDataSourceCommand);
-            let sAddDataSourceOutput = await runLoggedPacCommand(sAddDataSourceCommand, oReporter);
-            oReporter.log('add-data-source succeeded for ' + sDisplayName + '.');
-            if (sAddDataSourceOutput && sAddDataSourceOutput.trim()) {
-              oReporter.log(sAddDataSourceOutput.trim());
-            }
-            if (normalizeConnectionReferences(sConfigPath, aReferenceEntries)) {
-              oReporter.log('Normalized connectionReferences after add-data-source.');
-            }
-            if (sApiName === 'shared_office365groups' && updateConnectorHelperDataSourceName(sApiName, getDefaultDataSourceName(sApiName))) {
-              oReporter.log('Updated dist/office365groups.js to use the generated data source name.');
-            }
-            if (sApiName === 'shared_office365groups' && updateOffice365GroupsHelperMetadata()) {
-              oReporter.log('Updated dist/office365groups.js with generated Office 365 Groups operation metadata.');
-            }
-            oSummary.aSynced.push(sDisplayName);
-          } catch (oError) {
-            if (isExistingDataSourceError(oError)) {
-              oReporter.log('add-data-source already existed for ' + sDisplayName + '.');
-              if (normalizeConnectionReferences(sConfigPath, aReferenceEntries)) {
-                oReporter.log('Normalized connectionReferences after existing data source check.');
-              }
-              if (sApiName === 'shared_office365groups' && updateConnectorHelperDataSourceName(sApiName, getDefaultDataSourceName(sApiName))) {
-                oReporter.log('Updated dist/office365groups.js to use the generated data source name.');
-              }
-              if (sApiName === 'shared_office365groups' && updateOffice365GroupsHelperMetadata()) {
-                oReporter.log('Updated dist/office365groups.js with generated Office 365 Groups operation metadata.');
-              }
-              oSummary.aExisting.push(sDisplayName);
-            } else {
-              oReporter.log('add-data-source failed for ' + sDisplayName + ': ' + oError);
-              oSummary.aErrors.push(sDisplayName + ': ' + oError);
-            }
-          }
-        }
-
-        if (bConfigChanged) {
-          fs.writeFileSync(sConfigPath, JSON.stringify(oConfig, null, 2) + '\n', 'utf8');
-          oReporter.log('Updated sharedConnectionId values in power.config.json.');
-        }
-      };
-
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Syncing connector data sources...', cancellable: false },
-      async (oProgress) => {
-        await fnRunSync(oProgress);
-      }
-    );
-
-    let aSummaryParts = [];
-    if (oSummary.aSynced.length > 0) {
-      aSummaryParts.push(oSummary.aSynced.length + ' data source(s) added');
-    }
-    if (oSummary.aExisting.length > 0) {
-      aSummaryParts.push(oSummary.aExisting.length + ' already present');
-    }
-    if (oSummary.iUpdatedIds > 0) {
-      aSummaryParts.push(oSummary.iUpdatedIds + ' sharedConnectionId value(s) updated');
-    }
-    if (oSummary.aMissing.length > 0) {
-      aSummaryParts.push(oSummary.aMissing.length + ' missing connection(s)');
-    }
-    if (oSummary.aErrors.length > 0) {
-      aSummaryParts.push(oSummary.aErrors.length + ' error(s)');
-    }
-
-    let sSummaryText = aSummaryParts.length > 0 ? aSummaryParts.join(', ') : 'no changes needed';
-    if (oSummary.aErrors.length > 0) {
-      let sMessage = 'Connection sync completed with issues: ' + sSummaryText + '.';
-      oReporter.log(sMessage);
-      oReporter.finish('warning', sMessage);
-      if (!oReporter.hasPanel()) {
-        vscode.window.showWarningMessage(sMessage + ' See the "Code App Plus: Connection Sync" output for details.');
-      }
-    } else if (oSummary.aMissing.length > 0) {
-      let sMessage = 'Connection sync completed: ' + sSummaryText + '. Missing: ' + oSummary.aMissing.join(', ');
-      oReporter.log(sMessage);
-      oReporter.finish('warning', sMessage);
-      if (!oReporter.hasPanel()) {
-        vscode.window.showWarningMessage(sMessage);
-      }
-    } else {
-      let sMessage = 'Connection sync complete: ' + sSummaryText;
-      oReporter.log(sMessage);
-      oReporter.finish('done', sMessage);
-      if (!oReporter.hasPanel()) {
-        vscode.window.showInformationMessage(sMessage);
-      }
-    }
-  } catch (oError) {
-    let sMessage = 'Connection sync failed: ' + normalizeErrorMessage(oError);
-    appendConnectionSyncLog(sMessage);
-    vscode.window.showErrorMessage(sMessage);
-  }
-}
-
-module.exports = { setupProject, authenticate, changeEnvironment, applyEnvironmentSelection, deploy, syncConnections, toggleDebugger, addDataverseSchema };
+module.exports = { setupProject, authenticate, changeEnvironment, applyEnvironmentSelection, deploy, toggleDebugger, addDataverseSchema };

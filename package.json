@@ -1,10 +1,11 @@
 {
   "name": "codeappjsext",
   "displayName": "CodeAppJS",
-  "description": "Power Platform CLI workflows for code-first apps",
-  "version": "1.1.2",
+  "description": "Power Apps Code Apps workflows powered by the bundled codeapp-cli (no pac CLI required)",
+  "version": "2.0.0",
   "icon": "codeapp-js.png",
   "publisher": "PowerDevBox",
+  "repository": "https://github.com/wyattdave/Codeapp-Ext",
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -15,7 +16,7 @@
     "power platform",
     "code apps",
     "dataverse",
-    "pac cli",
+    "codeapp-cli",
     "Power Apps"
   ],
   "activationEvents": [
