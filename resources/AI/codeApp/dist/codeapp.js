@@ -393,3 +393,95 @@ async function execConnectorOpWithCandidates(aDataSourceCandidates, oApis, sConn
 
   throw new Error('No ' + sConnectorName + ' connection reference matched. Tried: ' + aErrors.join(' || '));
 }
+
+const FLOW_APIS = {
+  Run: {
+    path: '/{connectionId}/triggers/manual/run',
+    method: 'POST',
+    parameters: [
+      { name: 'connectionId', in: 'path', required: true },
+      { name: 'input', in: 'body', required: false },
+      { name: 'api-version', in: 'query', required: true },
+    ],
+  },
+};
+
+function uniqueNonEmptyStrings(aValues) {
+  const aSeen = [];
+
+  (aValues || []).forEach(function(value) {
+    if (typeof value !== 'string') return;
+
+    const sValue = value.trim();
+    if (!sValue || aSeen.indexOf(sValue) !== -1) return;
+
+    aSeen.push(sValue);
+  });
+
+  return aSeen;
+}
+
+function normalizeFlowDataSourceCandidates(flowTarget) {
+  if (typeof flowTarget === 'string') {
+    return uniqueNonEmptyStrings([flowTarget]);
+  }
+
+  if (Array.isArray(flowTarget)) {
+    return uniqueNonEmptyStrings(flowTarget);
+  }
+
+  if (!flowTarget || typeof flowTarget !== 'object') {
+    return [];
+  }
+
+  return uniqueNonEmptyStrings([
+    flowTarget.dataSourceName,
+    flowTarget.flowName,
+  ].concat(Array.isArray(flowTarget.dataSourceCandidates) ? flowTarget.dataSourceCandidates : []));
+}
+
+function buildFlowRunParameters(input, options) {
+  const oOptions = options || {};
+  const oParameters = Object.assign({}, oOptions.parameters);
+
+  if (!oParameters['api-version']) {
+    oParameters['api-version'] = oOptions.apiVersion || '2015-02-01-preview';
+  }
+
+  if (input !== undefined) {
+    oParameters.input = input;
+  }
+
+  return oParameters;
+}
+
+// ── Logic Flows ───────────────────────────────────────────────
+// Use the flow data source name from power.config.json connectionReferences.*.dataSources[0].
+// Generated flow services call the same Run operation; this helper is the handwritten equivalent.
+export async function callFlow(flowTarget, input, options = {}) {
+  return _dbgWrap('callFlow', [flowTarget, input, options], async function() {
+    const aDataSourceCandidates = normalizeFlowDataSourceCandidates(flowTarget);
+
+    if (aDataSourceCandidates.length === 0) {
+      throw new Error('callFlow requires a flow data source name. Use power.config.json connectionReferences.<key>.dataSources[0].');
+    }
+
+    try {
+      return await execConnectorOpWithCandidates(
+        aDataSourceCandidates,
+        FLOW_APIS,
+        'Logic flow',
+        'Run',
+        buildFlowRunParameters(input, options)
+      );
+    } catch (oErr) {
+      const sMessage = stringifyConnectorError(oErr);
+
+      if (sMessage.indexOf('No Logic flow connection reference matched.') === 0 || sMessage.indexOf('Connection reference not found') !== -1) {
+        throw new Error(sMessage + ' Use the flow data source name from power.config.json connectionReferences.<key>.dataSources[0], not the connection reference UUID key or the display name.');
+      }
+
+      throw oErr;
+    }
+  });
+}

@@ -1,7 +1,7 @@
 {
   "name": "codeappjsext",
   "displayName": "CodeAppJS",
-  "description": "Power Apps Code Apps workflows powered by the bundled codeapp-cli (no pac CLI required)",
+  "description": "VS Code wrapper for Power Apps Code App workflows using PAC and lightweight local command wrappers",
   "version": "2.0.0",
   "icon": "codeapp-js.png",
   "publisher": "PowerDevBox",
@@ -46,6 +46,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "codeappjsext.flowSchema",
+        "title": "CodeAppJS: Add Flow Schema",
+        "icon": "$(references)"
+      },
+      {
         "command": "codeappjsext.debugger",
         "title": "CodeAppJS: Toggle Debugger",
         "icon": "$(debug-alt-small)"
@@ -69,20 +74,25 @@
           "group": "navigation@1"
         },
         {
-          "command": "codeappjsext.debugger",
+          "command": "codeappjsext.flowSchema",
           "when": "codeappjsext.buttonsVisible",
           "group": "navigation@2"
         },
         {
-          "command": "codeappjsext.deploy",
+          "command": "codeappjsext.debugger",
           "when": "codeappjsext.buttonsVisible",
           "group": "navigation@3"
+        },
+        {
+          "command": "codeappjsext.deploy",
+          "when": "codeappjsext.buttonsVisible",
+          "group": "navigation@4"
         }
       ]
     },
     "chatAgents": [
       {
-        "path": "./resources/AI/codeapp.agent.md",
+        "path": "./resources/AI/AI/codeapp.agent.md",
         "sessionTypes": [
           "local"
         ]
@@ -90,85 +100,91 @@
     ],
     "chatSkills": [
       {
-        "path": "./resources/AI/Skills/autoreview/SKILL.md",
+        "path": "./resources/AI/AI/skills/autoreview/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/connections/SKILL.md",
+        "path": "./resources/AI/AI/skills/connections/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/dataverse/SKILL.md",
+        "path": "./resources/AI/AI/skills/dataverse/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/environment-variables/SKILL.md",
+        "path": "./resources/AI/AI/skills/environment-variables/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/frontend-design/SKILL.md",
+        "path": "./resources/AI/AI/skills/frontend-design/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/jira/SKILL.md",
+        "path": "./resources/AI/AI/skills/jira/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/keyvault/SKILL.md",
+        "path": "./resources/AI/AI/skills/keyvault/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/office365-groups/SKILL.md",
+        "path": "./resources/AI/AI/skills/logicflows/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/office365-outlook/SKILL.md",
+        "path": "./resources/AI/AI/skills/office365-groups/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/office365-users/SKILL.md",
+        "path": "./resources/AI/AI/skills/office365-outlook/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/sharepoint/SKILL.md",
+        "path": "./resources/AI/AI/skills/office365-users/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/sql/SKILL.md",
+        "path": "./resources/AI/AI/skills/sharepoint/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/start/SKILL.md",
+        "path": "./resources/AI/AI/skills/sql/SKILL.md",
         "sessionTypes": [
           "local"
         ]
       },
       {
-        "path": "./resources/AI/Skills/teams/SKILL.md",
+        "path": "./resources/AI/AI/skills/start/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./resources/AI/AI/skills/teams/SKILL.md",
         "sessionTypes": [
           "local"
         ]

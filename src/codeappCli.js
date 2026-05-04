@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs');
 
 let sCachedCliRoot = null;
-let bDependenciesEnsured = false;
 
 function getCodeAppCliRoot() {
   if (sCachedCliRoot) {
@@ -21,13 +20,8 @@ function getCodeAppCliEntry() {
   return path.join(getCodeAppCliRoot(), 'bin', 'codeapp.js');
 }
 
-function getCodeAppCliNodeModules() {
-  return path.join(getCodeAppCliRoot(), 'node_modules');
-}
-
 function isCodeAppCliInstalled() {
-  let sCliEntry = getCodeAppCliEntry();
-  return fs.existsSync(sCliEntry) && fs.existsSync(getCodeAppCliNodeModules());
+  return fs.existsSync(getCodeAppCliEntry());
 }
 
 /* Build the shell-safe command string used to invoke the CLI from a terminal. */
@@ -53,21 +47,19 @@ function isCliOutputError(sOutput) {
   return new RegExp('(^|\\n)Error:\\s', 'i').test(sNormalized);
 }
 
-function runCodeAppCommand(sCommand, oOptions = {}) {
-  let sCliEntry = getCodeAppCliEntry();
-  let sFullCommand = 'node "' + sCliEntry + '" ' + sCommand;
+function runShellCommand(sFullCommand, oOptions = {}) {
   let sCommandCwd = oOptions.cwd || getWorkspaceRoot();
-
   return new Promise((resolve, reject) => {
     let sStdout = '';
     let sStderr = '';
+    let sCombinedOutput = '';
     let bSettled = false;
     let bCancelled = false;
 
     let oProcess = spawn(sFullCommand, [], {
       cwd: sCommandCwd,
       shell: true,
-      env: process.env,
+      env: Object.assign({}, process.env, oOptions.env || {}),
       windowsHide: true
     });
 
@@ -93,6 +85,7 @@ function runCodeAppCommand(sCommand, oOptions = {}) {
     oProcess.stdout.on('data', (oChunk) => {
       let sChunk = oChunk.toString();
       sStdout += sChunk;
+      sCombinedOutput += sChunk;
       if (typeof oOptions.onStdout === 'function') {
         oOptions.onStdout(sChunk);
       }
@@ -101,6 +94,7 @@ function runCodeAppCommand(sCommand, oOptions = {}) {
     oProcess.stderr.on('data', (oChunk) => {
       let sChunk = oChunk.toString();
       sStderr += sChunk;
+      sCombinedOutput += sChunk;
       if (typeof oOptions.onStderr === 'function') {
         oOptions.onStderr(sChunk);
       }
@@ -126,77 +120,36 @@ function runCodeAppCommand(sCommand, oOptions = {}) {
       } else if (isCliOutputError(sStdout) || isCliOutputError(sStderr)) {
         reject((sStderr || '') + (sStdout || ''));
       } else {
-        resolve(sStdout);
+        resolve(oOptions.bReturnCombinedOutput ? sCombinedOutput : sStdout);
       }
     });
   });
 }
 
-function installCodeAppCliDependencies() {
-  let sCliRoot = getCodeAppCliRoot();
-  return new Promise((resolve, reject) => {
-    let oProcess = spawn('npm install', [], {
-      cwd: sCliRoot,
-      shell: true,
-      env: process.env,
-      windowsHide: true
-    });
-
-    let sStderr = '';
-    oProcess.stderr.on('data', (oChunk) => {
-      sStderr += oChunk.toString();
-    });
-    oProcess.on('error', (oError) => reject(oError));
-    oProcess.on('close', (iCode) => {
-      if (iCode === 0) {
-        resolve();
-      } else {
-        reject(new Error(sStderr || 'npm install failed with exit code ' + iCode));
-      }
-    });
-  });
+function runCodeAppCommand(sCommand, oOptions = {}) {
+  let sCliEntry = getCodeAppCliEntry();
+  let sFullCommand = 'node "' + sCliEntry + '" ' + sCommand;
+  return runShellCommand(sFullCommand, oOptions);
 }
 
 async function ensureCodeAppCliReady() {
-  if (bDependenciesEnsured) {
-    return true;
-  }
-
   let sCliEntry = getCodeAppCliEntry();
   if (!fs.existsSync(sCliEntry)) {
     vscode.window.showErrorMessage('codeapp-cli was not found at ' + sCliEntry + '. Reinstall the extension.');
     return false;
   }
 
-  if (fs.existsSync(getCodeAppCliNodeModules())) {
-    bDependenciesEnsured = true;
-    return true;
-  }
-
-  try {
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Installing codeapp-cli dependencies (first run)...', cancellable: false },
-      async () => {
-        await installCodeAppCliDependencies();
-      }
-    );
-    bDependenciesEnsured = true;
-    return true;
-  } catch (oError) {
-    let sMessage = oError && oError.message ? oError.message : String(oError);
-    vscode.window.showErrorMessage('Failed to install codeapp-cli dependencies: ' + sMessage);
-    return false;
-  }
+  return true;
 }
 
 function checkAndInstallCodeAppCli() {
-  /* Fire-and-forget background install on activation so the first user action is fast. */
-  ensureCodeAppCliReady().catch(() => {});
+  /* Lightweight wrapper only. Nothing to install. */
 }
 
 module.exports = {
   checkAndInstallCodeAppCli,
   ensureCodeAppCliReady,
+  runShellCommand,
   runCodeAppCommand,
   getCodeAppCliCommand,
   getWorkspaceRoot,
