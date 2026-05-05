@@ -44,7 +44,11 @@ function isCliOutputError(sOutput) {
   }
 
   let sNormalized = String(sOutput);
-  return new RegExp('(^|\\n)Error:\\s', 'i').test(sNormalized);
+  return [
+    new RegExp('(^|\n)Error:\\s', 'i'),
+    new RegExp('(^|\n)Error during CLI execution:\\s', 'i'),
+    new RegExp('(^|\n)HTTP error status:\\s*[0-9]+', 'i')
+  ].some((oPattern) => oPattern.test(sNormalized));
 }
 
 function runShellCommand(sFullCommand, oOptions = {}) {
@@ -118,7 +122,7 @@ function runShellCommand(sFullCommand, oOptions = {}) {
       } else if (iCode !== 0) {
         reject(sStderr || sStdout || 'codeapp command failed with exit code ' + iCode);
       } else if (isCliOutputError(sStdout) || isCliOutputError(sStderr)) {
-        reject((sStderr || '') + (sStdout || ''));
+        reject(sCombinedOutput || sStderr || sStdout);
       } else {
         resolve(oOptions.bReturnCombinedOutput ? sCombinedOutput : sStdout);
       }

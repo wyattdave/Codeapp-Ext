@@ -199,5 +199,6 @@
     "@vscode/vsce": "^2.22.0"
   },
   "dependencies": {
+    "@microsoft/power-apps-cli": "^0.10.0"
   }
 }

@@ -4,18 +4,18 @@
 
 It forwards a small set of extension-facing commands to the supported external CLIs:
 
-- `pac` for authentication, Dataverse schema generation, app listing, and deploy
-- `npx --package @microsoft/power-apps-cli power-apps --non-interactive` for flow commands
+- local `power-apps` from `@microsoft/power-apps-cli` for code app deploy, app listing, data sources, and flow commands
+- `pac` only for authentication and environment selection
 
 ## Commands
 
 ```text
-codeapp add-data-source  -> pac code add-data-source
-codeapp push             -> pac code push
-codeapp list-codeapps    -> pac code list
+codeapp add-data-source  -> power-apps add-data-source
+codeapp push             -> power-apps push
+codeapp list-codeapps    -> power-apps list-codeapps
 codeapp logout           -> pac auth clear
-codeapp list-flows       -> npx --package @microsoft/power-apps-cli power-apps list-flows --non-interactive
-codeapp add-flow         -> npx --package @microsoft/power-apps-cli power-apps add-flow --non-interactive
+codeapp list-flows       -> power-apps list-flows --non-interactive
+codeapp add-flow         -> power-apps add-flow --non-interactive
 ```
 
 Run locally with:
@@ -24,4 +24,4 @@ Run locally with:
 node ./bin/codeapp.js --help
 ```
 
-The wrapper exists so the extension can keep one stable Node entrypoint without bundling `node_modules`.
+The wrapper first looks in the workspace `node_modules/.bin` so the extension can use the installed `@microsoft/power-apps-cli` binary without requiring it on the system `PATH`.

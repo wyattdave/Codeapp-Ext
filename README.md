@@ -10,7 +10,7 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 - Status bar items for Power Platform authentication and environment switching.
 - Project setup that copies starter files into your workspace and updates `power.config.json` through native VS Code input prompts.
 - Connection reference syncing against the active environment.
-- One-click deploy with `pac code push`, including app URL detection and `appId` update when available.
+- One-click deploy with the npm `power-apps push` CLI, including app URL detection and `appId` update when available.
 
 ## Requirements
 
@@ -37,9 +37,9 @@ The extension uses the CLI bundled with the Power Platform Tools extension when 
 | `CodeAppJS: Change Environment` | Lists environments, switches the active org selection, stores the selection locally, and updates `power.config.json` when possible. |
 | `CodeAppJS: Add Data Sources` | Reads `connectionReferences` from `power.config.json`, inspects available PAC connections, and updates reference details. |
 | `CodeAppJS: Add Dataverse Schema` | Prompts for a Dataverse table logical name and generates the matching schema into the agent folder. |
-| `CodeAppJS: Add Flow Schema` | Lists flows from `npx --package @microsoft/power-apps-cli power-apps list-flows --non-interactive`, lets you filter them with Quick Pick search, and runs `npx --package @microsoft/power-apps-cli power-apps add-flow --flow-id ... --non-interactive` for the selected flow. |
+| `CodeAppJS: Add Flow Schema` | Lists flows from the installed `power-apps list-flows --non-interactive` CLI, lets you filter them with Quick Pick search, and runs `power-apps add-flow --flow-id ... --non-interactive` for the selected flow. |
 | `CodeAppJS: Toggle Debugger` | Adds or removes the codeapp debugger snippet from the current build entry point. |
-| `CodeAppJS: Deploy` | Runs `pac code push`, reports progress, and stores the detected `appId` in `power.config.json` when available. |
+| `CodeAppJS: Deploy` | Runs `power-apps push`, reports progress, and stores the detected `appId` in `power.config.json` when available. |
 
 ## Setup Behavior
 
@@ -52,6 +52,6 @@ When you run project setup, the extension copies files from its bundled template
 ## Notes
 
 - PAC authentication must be completed before environment listing, data source sync, or deploy can succeed.
-- Flow commands now run in non-interactive mode so they fail instead of opening a browser prompt when the Power Apps npm CLI is not already authenticated.
+- Flow commands now run in non-interactive mode through the installed `power-apps` CLI so they fail instead of opening a browser prompt when required configuration is missing.
 - Deploy captures command output, looks for the Power Apps URL, and stores the detected `appId` in `power.config.json` when possible.
 - Data source sync reads `connectionReferences`, selects the configured environment if one is set, inspects available connections, and updates reference metadata in `power.config.json`.

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const S_POWER_APPS_PACKAGE = '@microsoft/power-apps-cli';
+const S_POWER_APPS_COMMAND = 'power-apps';
 const aArgs = process.argv.slice(2);
 const sCommand = aArgs[0] || '';
 const aRest = aArgs.slice(1);
@@ -106,12 +107,41 @@ function findExecutableOnPath(sCommandName) {
   return null;
 }
 
-function getKnownExecutableLocations(sCommandName) {
-  if (process.platform !== 'win32' || sCommandName !== 'pac') {
-    return [];
+function getLocalNodeModulesBinDirectories() {
+  return [
+    path.join(process.cwd(), 'node_modules', '.bin'),
+    path.resolve(__dirname, '..', '..', 'node_modules', '.bin')
+  ].filter((sDirectoryPath, iIndex, aDirectories) => {
+    return aDirectories.indexOf(sDirectoryPath) === iIndex && fs.existsSync(sDirectoryPath);
+  });
+}
+
+function findExecutableInLocalNodeModules(sCommandName) {
+  let aDirectories = getLocalNodeModulesBinDirectories();
+  for (let iIndex = 0; iIndex < aDirectories.length; iIndex++) {
+    let sResolvedPath = findExecutableInDirectory(aDirectories[iIndex], sCommandName);
+    if (sResolvedPath) {
+      return sResolvedPath;
+    }
   }
 
+  return null;
+}
+
+function getKnownExecutableLocations(sCommandName) {
   let aLocations = [];
+
+  if (sCommandName === S_POWER_APPS_COMMAND) {
+    let sLocalExecutable = findExecutableInLocalNodeModules(sCommandName);
+    if (sLocalExecutable) {
+      aLocations.push(sLocalExecutable);
+    }
+  }
+
+  if (process.platform !== 'win32' || sCommandName !== 'pac') {
+    return aLocations;
+  }
+
   if (process.env.LOCALAPPDATA) {
     aLocations.push(path.join(process.env.LOCALAPPDATA, 'Microsoft', 'PowerAppsCLI', 'pac.cmd'));
   }
@@ -124,10 +154,15 @@ function getKnownExecutableLocations(sCommandName) {
 }
 
 function resolveExecutable(sCommandName) {
-  let sOverrideName = 'CODEAPP_' + sCommandName.toUpperCase() + '_PATH';
+  let sOverrideName = 'CODEAPP_' + sCommandName.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_PATH';
   let sOverridePath = process.env[sOverrideName];
   if (sOverridePath && fs.existsSync(sOverridePath)) {
     return sOverridePath;
+  }
+
+  let sLocalExecutable = findExecutableInLocalNodeModules(sCommandName);
+  if (sLocalExecutable) {
+    return sLocalExecutable;
   }
 
   let sPathExecutable = findExecutableOnPath(sCommandName);
@@ -147,6 +182,9 @@ function getMissingExecutableMessage(sExecutableName) {
   if (sExecutableName === 'pac') {
     return 'Could not find pac. Install Microsoft Power Platform CLI, ensure it is available to VS Code, or set CODEAPP_PAC_PATH.';
   }
+  if (sExecutableName === S_POWER_APPS_COMMAND) {
+    return 'Could not find power-apps. Install @microsoft/power-apps-cli in the workspace, ensure node_modules/.bin is available, or set CODEAPP_POWER_APPS_PATH.';
+  }
   if (sExecutableName === 'npx') {
     return 'Could not find npx. Install Node.js and ensure npx is available to VS Code.';
   }
@@ -159,12 +197,12 @@ function printHelp() {
     'Usage: codeapp <command> [options]\n\n' +
     'Lightweight wrapper used by the VS Code extension.\n\n' +
     'Commands:\n' +
-    '  add-data-source   Run pac code add-data-source with extension-friendly flags\n' +
-    '  push              Run pac code push\n' +
-    '  list-codeapps     Run pac code list\n' +
+    '  add-data-source   Run power-apps add-data-source with extension-friendly flags\n' +
+    '  push              Run power-apps push\n' +
+    '  list-codeapps     Run power-apps list-codeapps\n' +
     '  logout            Run pac auth clear\n' +
-    '  list-flows        Run npx --package @microsoft/power-apps-cli power-apps list-flows --non-interactive\n' +
-    '  add-flow          Run npx --package @microsoft/power-apps-cli power-apps add-flow --non-interactive\n'
+    '  list-flows        Run power-apps list-flows --non-interactive\n' +
+    '  add-flow          Run power-apps add-flow --non-interactive\n'
   );
 }
 
@@ -188,10 +226,6 @@ function ensureFlag(aInputArgs, sFlag) {
 }
 
 function normalizeHelpArgs(aInputArgs) {
-  if (aInputArgs.indexOf('--help') !== -1 || aInputArgs.indexOf('-h') !== -1) {
-    return ['help'];
-  }
-
   return aInputArgs;
 }
 
@@ -199,29 +233,29 @@ function getCommandSpec() {
   switch (sCommand) {
     case 'add-data-source':
       return {
-        sExecutableName: 'pac',
-        sExecutable: resolveExecutable('pac'),
-        aExecutableArgs: ['code', 'add-data-source'].concat(mapArgs(normalizeHelpArgs(aRest), {
-          '--api-id': '--apiId',
-          '--connection-id': '--connectionId',
-          '--resource-name': '--table',
-          '--connection-ref': '--connectionRef',
-          '--solution-id': '--solutionId'
+        sExecutableName: S_POWER_APPS_COMMAND,
+        sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
+        aExecutableArgs: ['add-data-source'].concat(mapArgs(normalizeHelpArgs(aRest), {
+          '--resource-name': '--resource-name',
+          '--solution-id': '--solution-id',
+          '--connection-id': '--connection-id',
+          '--connection-ref': '--connection-ref',
+          '--api-id': '--api-id'
         }))
       };
     case 'push':
       return {
-        sExecutableName: 'pac',
-        sExecutable: resolveExecutable('pac'),
-        aExecutableArgs: ['code', 'push'].concat(mapArgs(normalizeHelpArgs(aRest), {
-          '--solution-id': '--solutionName'
+        sExecutableName: S_POWER_APPS_COMMAND,
+        sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
+        aExecutableArgs: ['push'].concat(mapArgs(normalizeHelpArgs(aRest), {
+          '--solution-id': '--solution-id'
         }))
       };
     case 'list-codeapps':
       return {
-        sExecutableName: 'pac',
-        sExecutable: resolveExecutable('pac'),
-        aExecutableArgs: ['code', 'list'].concat(normalizeHelpArgs(aRest))
+        sExecutableName: S_POWER_APPS_COMMAND,
+        sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
+        aExecutableArgs: ['list-codeapps'].concat(normalizeHelpArgs(aRest))
       };
     case 'logout':
       return {
@@ -231,15 +265,15 @@ function getCommandSpec() {
       };
     case 'list-flows':
       return {
-        sExecutableName: 'npx',
-        sExecutable: resolveExecutable('npx'),
-        aExecutableArgs: ['--yes', '--package', S_POWER_APPS_PACKAGE, 'power-apps', 'list-flows'].concat(ensureFlag(normalizeHelpArgs(aRest), '--non-interactive'))
+        sExecutableName: S_POWER_APPS_COMMAND,
+        sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
+        aExecutableArgs: ['list-flows'].concat(ensureFlag(normalizeHelpArgs(aRest), '--non-interactive'))
       };
     case 'add-flow':
       return {
-        sExecutableName: 'npx',
-        sExecutable: resolveExecutable('npx'),
-        aExecutableArgs: ['--yes', '--package', S_POWER_APPS_PACKAGE, 'power-apps', 'add-flow'].concat(ensureFlag(normalizeHelpArgs(aRest), '--non-interactive'))
+        sExecutableName: S_POWER_APPS_COMMAND,
+        sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
+        aExecutableArgs: ['add-flow'].concat(ensureFlag(normalizeHelpArgs(aRest), '--non-interactive'))
       };
     case '':
     case '--help':

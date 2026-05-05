@@ -11,7 +11,7 @@ const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
 const S_ENVIRONMENT_PLACEHOLDER = '<ENVIRONMENT ID>';
 const S_AGENT_DIRECTORY_RELATIVE_PATH = 'agent';
 const S_DEBUGGER_SNIPPET = "import { enableDebugger } from './codeapp.js';\nenableDebugger();\n";
-const S_POWER_APPS_NPX_COMMAND = 'npx --yes --package @microsoft/power-apps-cli power-apps';
+const S_POWER_APPS_COMMAND = 'power-apps';
 
 function getConnectionSyncOutput() {
   if (!oConnectionSyncOutput) {
@@ -39,17 +39,36 @@ function getCommandOutput(sTitle) {
   return oCommandOutputs[sResolvedTitle];
 }
 
+function simplifyCliErrorMessage(sMessage) {
+  let sNormalizedMessage = String(sMessage || '')
+    .replace(new RegExp('\r', 'g'), '')
+    .trim();
+
+  sNormalizedMessage = sNormalizedMessage
+    .replace(new RegExp('^Error during CLI execution:\\s*', 'i'), '')
+    .replace(new RegExp('^Error:\\s*', 'i'), '');
+
+  let oCodeMatch = new RegExp('"code":"([^"]+)"', 'i').exec(sNormalizedMessage);
+  let oDetailMatch = new RegExp('"message":"([^"]+)"', 'i').exec(sNormalizedMessage);
+
+  if (oCodeMatch && oDetailMatch) {
+    return oCodeMatch[1] + ': ' + oDetailMatch[1];
+  }
+
+  return sNormalizedMessage;
+}
+
 function normalizeErrorMessage(oError) {
   if (!oError) {
     return 'Unknown error';
   }
 
   if (typeof oError === 'string') {
-    return oError;
+    return simplifyCliErrorMessage(oError);
   }
 
   if (oError.message) {
-    return oError.message;
+    return simplifyCliErrorMessage(oError.message);
   }
 
   try {
@@ -78,6 +97,9 @@ function createCommandReporter(oPanel, sTitle, sInitialStatus, oOptions = {}) {
     },
     raw(sChunk) {
       oOutput.append(sChunk);
+    },
+    show() {
+      oOutput.show(true);
     },
     finish(sState, sText) {
       sLastStatus = sText || sLastStatus;
@@ -126,19 +148,30 @@ async function runLoggedPacCommand(sCommand, oReporter, oRunOptions = {}) {
 }
 
 async function runLoggedPowerAppsCommand(sCommand, oReporter, oRunOptions = {}) {
-  let sFullCommand = S_POWER_APPS_NPX_COMMAND + ' ' + sCommand;
   let sEnvironmentId = getConfiguredEnvironmentId();
   let oEnv = Object.assign({}, oRunOptions.env || {});
+  let sResolvedCommand = sCommand;
 
-  if (sFullCommand.indexOf('--non-interactive') === -1) {
-    sFullCommand += ' --non-interactive';
+  if (sResolvedCommand.indexOf('--non-interactive') === -1) {
+    sResolvedCommand += ' --non-interactive';
   }
 
   if (sEnvironmentId && !oEnv.ENVIRONMENT_ID) {
     oEnv.ENVIRONMENT_ID = getPacSelectableEnvironmentId(sEnvironmentId);
   }
 
-  return await runLoggedShellCommand(sFullCommand, oReporter, Object.assign({}, oRunOptions, { env: oEnv }));
+  oReporter.log('> ' + S_POWER_APPS_COMMAND + ' ' + sResolvedCommand);
+  return await runCodeAppCommand(sResolvedCommand, {
+    cwd: oRunOptions.cwd,
+    env: oEnv,
+    bReturnCombinedOutput: oRunOptions.bReturnCombinedOutput === true,
+    onStdout: (sChunk) => {
+      oReporter.raw(sChunk);
+    },
+    onStderr: (sChunk) => {
+      oReporter.raw(sChunk);
+    }
+  });
 }
 
 function getPowerConfigPath() {
@@ -725,6 +758,83 @@ function updatePowerConfigAppId(sAppId) {
   };
 }
 
+function stripUnsupportedDeployConnectionReferenceFields(oConnectionReference) {
+  if (!oConnectionReference || typeof oConnectionReference !== 'object' || Array.isArray(oConnectionReference)) {
+    return oConnectionReference;
+  }
+
+  let oSanitizedReference = Object.assign({}, oConnectionReference);
+  delete oSanitizedReference.workflowDetails;
+  return oSanitizedReference;
+}
+
+function sanitizePowerConfigForDeploy() {
+  let sConfigPath = getPowerConfigPath();
+  if (!sConfigPath || !fs.existsSync(sConfigPath)) {
+    return {
+      bConfigFound: false,
+      bSanitized: false,
+      iRemovedWorkflowDetailsCount: 0,
+      sConfigPath: sConfigPath,
+      sOriginalContent: ''
+    };
+  }
+
+  let sOriginalContent = fs.readFileSync(sConfigPath, 'utf8');
+  let oConfig = JSON.parse(sOriginalContent);
+  let oConnectionReferences = oConfig && oConfig.connectionReferences ? oConfig.connectionReferences : null;
+  if (!oConnectionReferences || typeof oConnectionReferences !== 'object') {
+    return {
+      bConfigFound: true,
+      bSanitized: false,
+      iRemovedWorkflowDetailsCount: 0,
+      sConfigPath: sConfigPath,
+      sOriginalContent: sOriginalContent
+    };
+  }
+
+  let iRemovedWorkflowDetailsCount = 0;
+  let oSanitizedConnectionReferences = Object.fromEntries(
+    Object.entries(oConnectionReferences).map(([sReferenceName, oReference]) => {
+      let bHadWorkflowDetails = Boolean(oReference && typeof oReference === 'object' && !Array.isArray(oReference) && oReference.workflowDetails);
+      if (bHadWorkflowDetails) {
+        iRemovedWorkflowDetailsCount += 1;
+      }
+
+      return [sReferenceName, stripUnsupportedDeployConnectionReferenceFields(oReference)];
+    })
+  );
+
+  if (iRemovedWorkflowDetailsCount === 0) {
+    return {
+      bConfigFound: true,
+      bSanitized: false,
+      iRemovedWorkflowDetailsCount: 0,
+      sConfigPath: sConfigPath,
+      sOriginalContent: sOriginalContent
+    };
+  }
+
+  oConfig.connectionReferences = oSanitizedConnectionReferences;
+  fs.writeFileSync(sConfigPath, JSON.stringify(oConfig, null, 2) + '\n', 'utf8');
+  return {
+    bConfigFound: true,
+    bSanitized: true,
+    iRemovedWorkflowDetailsCount: iRemovedWorkflowDetailsCount,
+    sConfigPath: sConfigPath,
+    sOriginalContent: sOriginalContent
+  };
+}
+
+function restorePowerConfigAfterDeploy(oSanitizedConfigState) {
+  if (!oSanitizedConfigState || !oSanitizedConfigState.bSanitized || !oSanitizedConfigState.sConfigPath) {
+    return false;
+  }
+
+  fs.writeFileSync(oSanitizedConfigState.sConfigPath, oSanitizedConfigState.sOriginalContent, 'utf8');
+  return true;
+}
+
 function getConnectorHelperPath(sApiName) {
   let sRoot = getWorkspaceRoot();
   if (!sRoot) {
@@ -1170,11 +1280,11 @@ function parseFlowListOutput(sOutput) {
 
 async function listAvailableFlows(oReporter) {
   try {
-    oReporter.status('Running ' + S_POWER_APPS_NPX_COMMAND + ' list-flows --json...');
+    oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' list-flows --json...');
     return parseFlowListOutput(await runLoggedPowerAppsCommand('list-flows --json', oReporter));
   } catch (oJsonError) {
     oReporter.log('JSON flow listing was unavailable. Retrying with plain text output.');
-    oReporter.status('Running ' + S_POWER_APPS_NPX_COMMAND + ' list-flows...');
+    oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' list-flows...');
     return parseFlowListOutput(await runLoggedPowerAppsCommand('list-flows', oReporter));
   }
 }
@@ -1313,7 +1423,7 @@ async function addFlowSchema() {
   }
 
   if (!aFlows.length) {
-    let sMessage = 'No flows were returned by ' + S_POWER_APPS_NPX_COMMAND + ' list-flows.';
+    let sMessage = 'No flows were returned by ' + S_POWER_APPS_COMMAND + ' list-flows.';
     oReporter.log(sMessage);
     oReporter.finish('error', sMessage);
     vscode.window.showWarningMessage(sMessage);
@@ -1357,7 +1467,7 @@ async function addFlowSchema() {
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Adding flow schema...', cancellable: false },
       async () => {
-        oReporter.status('Running ' + S_POWER_APPS_NPX_COMMAND + ' add-flow...');
+        oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' add-flow...');
         oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
         await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
 
@@ -1673,15 +1783,24 @@ async function deploy() {
 
   let oReporter = createCommandReporter(null, 'Deploy', 'Starting codeapp push...', { bShowOnStart: false });
   let oDeployResult = null;
+  let oSanitizedConfigState = null;
 
   let fnRunDeploy = async () => {
     oReporter.start();
+    oReporter.status('Preparing deploy configuration...');
+    oSanitizedConfigState = sanitizePowerConfigForDeploy();
+    if (oSanitizedConfigState.bSanitized) {
+      oReporter.log(
+        'Removed workflowDetails from ' + oSanitizedConfigState.iRemovedWorkflowDetailsCount + ' connection reference' +
+        (oSanitizedConfigState.iRemovedWorkflowDetailsCount === 1 ? '' : 's') + ' for deploy compatibility.'
+      );
+    }
+
     oReporter.status('Running codeapp push...');
     oReporter.log('Starting deploy...');
     let sDeployOutput = await runLoggedCodeAppCommand('push', oReporter, { bReturnCombinedOutput: true });
     let sAppUrl = extractPowerAppsUrl(sDeployOutput);
     let sAppId = getAppIdFromPowerAppsUrl(sAppUrl);
-    let oAppIdUpdateResult = null;
 
     if (sAppUrl) {
       oReporter.log('App URL: ' + sAppUrl);
@@ -1689,33 +1808,23 @@ async function deploy() {
       oReporter.log('No app URL was found in the deploy output.');
     }
 
-    if (sAppId) {
-      oAppIdUpdateResult = updatePowerConfigAppId(sAppId);
-      if (oAppIdUpdateResult.bConfigFound) {
-        oReporter.log(
-          oAppIdUpdateResult.bUpdated
-            ? 'Updated power.config.json with appId: ' + sAppId
-            : 'power.config.json already contains appId: ' + sAppId
-        );
-      } else {
-        oReporter.log('App ID detected (' + sAppId + '), but power.config.json was not found in the workspace root.');
-      }
-    }
-
     let aMessageParts = ['Deploy complete.'];
     if (sAppUrl) {
       aMessageParts.push('Open app: ' + sAppUrl);
     }
-    if (sAppId && oAppIdUpdateResult && oAppIdUpdateResult.bConfigFound) {
-      aMessageParts.push('Saved appId to power.config.json.');
-    } else if (sAppId) {
+    if (sAppId) {
       aMessageParts.push('Detected appId: ' + sAppId);
     }
 
     let sMessage = aMessageParts.join(' ');
     oReporter.log(sMessage);
     oReporter.finish('done', sMessage);
-    return { sMessage: sMessage, sAppUrl: sAppUrl };
+    return {
+      sMessage: sMessage,
+      sAppUrl: sAppUrl,
+      sAppId: sAppId,
+      bHasDetectedUrl: Boolean(sAppUrl)
+    };
   };
 
   try {
@@ -1726,17 +1835,48 @@ async function deploy() {
       }
     );
 
+    if (oSanitizedConfigState && oSanitizedConfigState.bSanitized) {
+      restorePowerConfigAfterDeploy(oSanitizedConfigState);
+      oReporter.log('Restored original power.config.json after deploy.');
+    }
+
+    if (oDeployResult && oDeployResult.sAppId) {
+      let oAppIdUpdateResult = updatePowerConfigAppId(oDeployResult.sAppId);
+      if (oAppIdUpdateResult.bConfigFound) {
+        oReporter.log(
+          oAppIdUpdateResult.bUpdated
+            ? 'Updated power.config.json with appId: ' + oDeployResult.sAppId
+            : 'power.config.json already contains appId: ' + oDeployResult.sAppId
+        );
+      } else {
+        oReporter.log('App ID detected (' + oDeployResult.sAppId + '), but power.config.json was not found in the workspace root.');
+      }
+    }
+
     if (!oReporter.hasPanel() && oDeployResult) {
-      if (oDeployResult.sAppUrl) {
-        let sSelection = await vscode.window.showInformationMessage(oDeployResult.sMessage, 'Open App');
+      if (oDeployResult.bHasDetectedUrl) {
+        let sSelection = await vscode.window.showInformationMessage('Deploy complete.', 'Open App', 'Show Log');
         if (sSelection === 'Open App') {
           await vscode.env.openExternal(vscode.Uri.parse(oDeployResult.sAppUrl));
+        } else if (sSelection === 'Show Log') {
+          oReporter.show();
         }
       } else {
-        vscode.window.showInformationMessage(oDeployResult.sMessage);
+        let sSelection = await vscode.window.showWarningMessage(
+          'Deploy complete, but the app URL was not detected. Open the Deploy output to verify the result.',
+          'Show Log'
+        );
+        if (sSelection === 'Show Log') {
+          oReporter.show();
+        }
       }
     }
   } catch (oError) {
+    if (oSanitizedConfigState && oSanitizedConfigState.bSanitized) {
+      restorePowerConfigAfterDeploy(oSanitizedConfigState);
+      oReporter.log('Restored original power.config.json after deploy failure.');
+    }
+
     let sMessage = 'Deploy failed: ' + normalizeErrorMessage(oError);
     oReporter.log(sMessage);
     oReporter.finish('error', sMessage);
