@@ -35,10 +35,11 @@ After style direction is established (or if the user's prompt already includes i
 When interactive user input is available, ask through the interactive question flow and continue in the same session after the user answers.
 Only stop and wait for a later run when interactive user input is not available.
 3. If the user says yes, create 5 **CREATIVE** and **DISTINCT** HTML mockup options in `agent/`, using the frontend-design skill, then stop so the user can pick one. Name them clearly, for example `agent/mockup-1.html` through `agent/mockup-5.html`.
-Each mockup must be a self-contained, one-page HTML file that opens directly in a browser, shows the visual design, and includes lightweight interaction such as search filtering, panel toggles, or compose drawer open/close behavior. It is a visual prototype only, not a fully functional app.
-Create the files sequentially as you work: fully write `agent/mockup-1.html` before starting `agent/mockup-2.html`, and continue one mockup at a time instead of batching all file writes at the end.
-4. If the user says no or wants to skip, proceed directly to building in the same session.
-5. Never say a mockup is ready unless the corresponding files have actually been created in `agent/`.
+4. Each mockup must be a self-contained, one-page HTML file that opens directly in a browser, shows the visual design, and includes lightweight interaction such as search filtering, panel toggles, or compose drawer open/close behavior. It is a visual prototype only, not a fully functional app.
+5. Create the files sequentially as you work: fully write `agent/mockup-1.html` before starting `agent/mockup-2.html`, and continue one mockup at a time instead of batching all file writes at the end.
+6. If the user says no or wants to skip, proceed directly to building in the same session.
+7. Never say a mockup is ready unless the corresponding files have actually been created in `agent/`.
+8. Break large files across multiple tool calls (createFile for a skeleton, then appendFile for sections) to avoid truncation, complete each file fully before moving to the next one. Do not design all options first and only write files at the end.
 
 ## Interactive Sessions
 

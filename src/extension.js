@@ -1,6 +1,6 @@
 const vscode = require('vscode');
-const { checkAndInstallPac } = require('./pacCli');
-const { setupProject, authenticate, changeEnvironment, deploy, toggleDebugger, addDataverseSchema } = require('./commands');
+const { checkAndInstallCodeAppCli } = require('./codeappCli');
+const { setupProject, authenticate, changeEnvironment, deploy, toggleDebugger, addDataverseSchema, addFlowSchema } = require('./commands');
 
 const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
 const S_BUTTONS_VISIBLE_STORAGE_KEY = 'buttonsVisible';
@@ -84,7 +84,7 @@ function createStatusBarItems(oContext) {
 }
 
 async function activate(oContext) {
-  checkAndInstallPac();
+  checkAndInstallCodeAppCli();
 
   await vscode.commands.executeCommand('setContext', 'codeappjsext.buttonsVisible', getButtonsVisible(oContext));
 
@@ -126,6 +126,10 @@ async function activate(oContext) {
     await addDataverseSchema(null, sTableName);
   });
 
+  let oFlowSchemaDisposable = vscode.commands.registerCommand('codeappjsext.flowSchema', async () => {
+    await addFlowSchema();
+  });
+
   let oDebuggerDisposable = vscode.commands.registerCommand('codeappjsext.debugger', async () => {
     await toggleDebugger();
   });
@@ -140,6 +144,7 @@ async function activate(oContext) {
     oEnvironmentDisposable,
     oToggleButtonsDisposable,
     oConnectionsDisposable,
+    oFlowSchemaDisposable,
     oDebuggerDisposable,
     oDeployDisposable,
     oSetupItem,
