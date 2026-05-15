@@ -15,15 +15,14 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 ## Requirements
 
 - VS Code `1.95.0` or newer.
-- Power Platform CLI (`pac`).
 - An open workspace folder.
 
-The extension uses the CLI bundled with the Power Platform Tools extension when it is available. Otherwise it falls back to `pac` on your system `PATH`.
+The extension runs `power-apps` from its packaged `node_modules/.bin` copy of `@microsoft/power-apps-cli` and exposes PAC-compatible auth/environment commands through the bundled `codeapp` wrapper. No separate PAC installation is required.
 
 ## Quick Start
 
 1. Open the folder that will contain your Power Platform code-first app.
-2. Click the `Auth` status bar item to start `pac auth create`.
+2. Click the `Auth` status bar item to start `pac auth create` through the bundled CLI.
 3. Click the environment status bar item to select the target environment.
 4. Open the `CodeAppJS` Activity Bar view.
 5. Use the view title actions for `Setup Project`, `Add Data Sources`, `Toggle Debugger`, and `Deploy`.
@@ -33,7 +32,7 @@ The extension uses the CLI bundled with the Power Platform Tools extension when 
 | Command | What it does |
 | --- | --- |
 | `CodeAppJS: Setup Project` | Copies the bundled template files into the workspace and updates `power.config.json`. |
-| `CodeAppJS: Authenticate` | Starts `pac auth create` in a terminal so you can sign in to Power Platform. |
+| `CodeAppJS: Authenticate` | Starts `pac auth create` in a terminal through the bundled CLI so you can sign in to Power Platform. |
 | `CodeAppJS: Change Environment` | Lists environments, switches the active org selection, stores the selection locally, and updates `power.config.json` when possible. |
 | `CodeAppJS: Add Data Sources` | Reads `connectionReferences` from `power.config.json`, inspects available PAC connections, and updates reference details. |
 | `CodeAppJS: Add Dataverse Schema` | Prompts for a Dataverse table logical name and generates the matching schema into the agent folder. |
@@ -52,6 +51,11 @@ When you run project setup, the extension copies files from its bundled template
 ## Notes
 
 - PAC authentication must be completed before environment listing, data source sync, or deploy can succeed.
+- The extension does not use a system-installed PAC CLI anymore; flow and deploy commands run through the packaged `power-apps` binary, and auth/environment commands run through the bundled PAC-compatibility wrapper backed by the same `@microsoft/power-apps-cli` dependency.
 - Flow commands now run in non-interactive mode through the installed `power-apps` CLI so they fail instead of opening a browser prompt when required configuration is missing.
 - Deploy captures command output, looks for the Power Apps URL, and stores the detected `appId` in `power.config.json` when possible.
 - Data source sync reads `connectionReferences`, selects the configured environment if one is set, inspects available connections, and updates reference metadata in `power.config.json`.
+
+## Version
+- v1.1.2 - launch version using CodeApps-JS v1.1.2
+- v2.0.0 - update to CodeApps-JS v2.0.0. Removed PowerPlatform CLI dependency and migrated to power-apps-cli npm version to allow deploying apps that call flows.

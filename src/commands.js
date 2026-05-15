@@ -2,11 +2,10 @@ const vscode = require('vscode');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-const { runCodeAppCommand, runShellCommand, ensureCodeAppCliReady, getWorkspaceRoot } = require('./codeappCli');
+const { runCodeAppCommand, runShellCommand, ensureCodeAppCliReady, getCodeAppCliCommand, getWorkspaceRoot } = require('./codeappCli');
 
 let oConnectionSyncOutput = null;
 let oCommandOutputs = {};
-const S_PAC_COMMAND = 'pac';
 const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
 const S_ENVIRONMENT_PLACEHOLDER = '<ENVIRONMENT ID>';
 const S_AGENT_DIRECTORY_RELATIVE_PATH = 'agent';
@@ -144,7 +143,7 @@ async function runLoggedShellCommand(sCommand, oReporter, oRunOptions = {}) {
 }
 
 async function runLoggedPacCommand(sCommand, oReporter, oRunOptions = {}) {
-  return await runLoggedShellCommand(S_PAC_COMMAND + ' ' + sCommand, oReporter, oRunOptions);
+  return await runLoggedCodeAppCommand('pac ' + sCommand, oReporter, oRunOptions);
 }
 
 async function runLoggedPowerAppsCommand(sCommand, oReporter, oRunOptions = {}) {
@@ -613,6 +612,20 @@ function applyActiveEnvironmentState(aEnvironments, sWhoOutput) {
   });
 }
 
+function dedupeEnvironments(aEnvironments) {
+  let oSeen = new Set();
+
+  return (aEnvironments || []).filter((oEnvironment) => {
+    let sKey = getComparableEnvironmentId(oEnvironment && oEnvironment.sId ? oEnvironment.sId : '') || normalizeEnvironmentUrl(oEnvironment && oEnvironment.sUrl ? oEnvironment.sUrl : '');
+    if (!sKey || oSeen.has(sKey)) {
+      return false;
+    }
+
+    oSeen.add(sKey);
+    return true;
+  });
+}
+
 function parseEnvironmentListJsonOutput(sOutput, sWhoOutput) {
   if (!sOutput) {
     return [];
@@ -645,7 +658,7 @@ function parseEnvironmentListJsonOutput(sOutput, sWhoOutput) {
       })
       .filter((oEnvironment) => Boolean(oEnvironment));
 
-    return applyActiveEnvironmentState(aEnvironments, sWhoOutput);
+    return dedupeEnvironments(applyActiveEnvironmentState(aEnvironments, sWhoOutput));
   } catch (oError) {
     return [];
   }
@@ -686,7 +699,7 @@ function parseEnvironmentListTextOutput(sOutput, sWhoOutput) {
     });
   });
 
-  return applyActiveEnvironmentState(aEnvironments, sWhoOutput);
+  return dedupeEnvironments(applyActiveEnvironmentState(aEnvironments, sWhoOutput));
 }
 
 function updatePowerConfigEnvironmentId(sEnvironmentId) {
@@ -1326,19 +1339,29 @@ async function addDataverseSchema(oPanel = null, sTableName = '') {
     let sTempPowerDirectory = path.join(sTempWorkingDirectory, '.power');
     let sTempSrcDirectory = path.join(sTempWorkingDirectory, 'src');
     let sAgentDirectory = getAgentDirectory();
+    let sEnvironmentUrl = await resolveConfiguredEnvironmentUrl(oReporter);
 
     oReporter.start();
     oReporter.status('Running codeapp add-data-source...');
     oReporter.log('Adding Dataverse data source for table: ' + sResolvedTableName);
 
     try {
+      if (!sEnvironmentUrl) {
+        throw new Error('No Dataverse environment URL was found. Use Change Environment or sign in again before adding schema.');
+      }
+
       fs.copyFileSync(sWorkspacePowerConfigPath, sTempPowerConfigPath);
 
       try {
         await runLoggedCodeAppCommand(
-          'add-data-source --api-id dataverse --resource-name ' + sResolvedTableName,
+          'add-data-source --api-id dataverse --resource-name ' + quoteShellArgument(sResolvedTableName) + ' --org-url ' + quoteShellArgument(sEnvironmentUrl),
           oReporter,
-          { cwd: sTempWorkingDirectory }
+          {
+            cwd: sTempWorkingDirectory,
+            env: {
+              ENV_URL: sEnvironmentUrl
+            }
+          }
         );
       } catch (oError) {
         let sError = typeof oError === 'string' ? oError : (oError && oError.message ? oError.message : String(oError));
@@ -1461,29 +1484,38 @@ async function addFlowSchema() {
   try {
     let sRoot = getWorkspaceRoot();
     let sWorkspacePowerDirectory = sRoot ? path.join(sRoot, '.power') : '';
+    let sWorkspaceSrcDirectory = sRoot ? path.join(sRoot, 'src') : '';
+    let bWorkspaceSrcDirectoryExisted = sWorkspaceSrcDirectory ? fs.existsSync(sWorkspaceSrcDirectory) : false;
     let sFlowSchemaDirectory = getFlowSchemaDirectory();
     let sAgentDirectory = getAgentDirectory();
 
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Adding flow schema...', cancellable: false },
       async () => {
-        oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' add-flow...');
-        oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
-        await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
+        try {
+          oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' add-flow...');
+          oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
+          await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
 
-        oReporter.status('Moving generated flow schema files...');
-        let aMovedFiles = moveFlowSchemaFilesToAgentFolder(sFlowSchemaDirectory, sAgentDirectory);
-        if (aMovedFiles.length === 0) {
-          throw new Error('No flow schema files were generated.');
+          oReporter.status('Moving generated flow schema files...');
+          let aMovedFiles = moveFlowSchemaFilesToAgentFolder(sFlowSchemaDirectory, sAgentDirectory);
+          if (aMovedFiles.length === 0) {
+            throw new Error('No flow schema files were generated.');
+          }
+
+          aMovedFiles.forEach((sMovedPath) => {
+            oReporter.log('Moved flow schema file to ' + toWorkspaceRelativePath(sMovedPath));
+          });
+        } finally {
+          oReporter.status('Cleaning generated flow folders...');
+          removeDirectoryIfExists(sWorkspacePowerDirectory);
+          oReporter.log('Deleted workspace .power folder.');
+
+          if (sWorkspaceSrcDirectory && !bWorkspaceSrcDirectoryExisted && fs.existsSync(sWorkspaceSrcDirectory)) {
+            removeDirectoryIfExists(sWorkspaceSrcDirectory);
+            oReporter.log('Deleted workspace src folder created by add-flow.');
+          }
         }
-
-        aMovedFiles.forEach((sMovedPath) => {
-          oReporter.log('Moved flow schema file to ' + toWorkspaceRelativePath(sMovedPath));
-        });
-
-        oReporter.status('Cleaning generated flow folders...');
-        removeDirectoryIfExists(sWorkspacePowerDirectory);
-        oReporter.log('Deleted workspace .power folder.');
       }
     );
 
@@ -1638,17 +1670,35 @@ async function openPowerConfigFile(sConfigPath) {
 }
 
 async function authenticate() {
-  let oReporter = createCommandReporter(null, 'Authentication', 'Opening PAC authentication...');
-  oReporter.start();
-  let oTerminal = vscode.window.createTerminal('Power Platform Auth');
-  oTerminal.show();
-  oTerminal.sendText('pac auth create');
-  let sMessage = 'Opened the PAC auth terminal. Complete sign-in there, then retry environment, flow, or deploy actions.';
-  oReporter.log('> pac auth create');
-  oReporter.log(sMessage);
-  oReporter.finish('working', 'Authentication started. Complete sign-in in the browser.');
-  if (!oReporter.hasPanel()) {
+  let oReporter = createCommandReporter(null, 'Authentication', 'Starting sign-in...');
+
+  try {
+    oReporter.start();
+    let sAuthOutput = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Sign in to Power Platform', cancellable: false },
+      async () => {
+        oReporter.status('Running pac auth create...');
+        return await runLoggedPacCommand('auth create --json', oReporter);
+      }
+    );
+
+    let sSignedInUser = '';
+    try {
+      let oAuthResult = JSON.parse(sAuthOutput || '{}');
+      sSignedInUser = oAuthResult && oAuthResult.user ? String(oAuthResult.user) : '';
+    } catch (oError) {
+      /* Fall back to a generic success message if the wrapper output is not JSON. */
+    }
+
+    let sMessage = sSignedInUser ? 'Signed in as ' + sSignedInUser + '.' : 'Authentication complete.';
+    oReporter.log(sMessage);
+    oReporter.finish('done', sMessage);
     vscode.window.showInformationMessage(sMessage);
+  } catch (oError) {
+    let sMessage = 'Authentication failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    vscode.window.showErrorMessage(sMessage);
   }
 }
 
@@ -1684,8 +1734,8 @@ async function changeEnvironment(oContext = null) {
   let oSelection = await vscode.window.showQuickPick(
     aEnvironments.map((oEnvironment) => ({
       label: oEnvironment.sName,
-      description: oEnvironment.sId,
-      detail: (oEnvironment.bActive ? 'Current PAC selection' : '') + (oEnvironment.sUrl ? ((oEnvironment.bActive ? '  ' : '') + oEnvironment.sUrl) : ''),
+      description: oEnvironment.bActive ? 'Current selection' : (oEnvironment.sUrl || ''),
+      detail: oEnvironment.sId,
       picked: areEnvironmentIdsEquivalent(oEnvironment.sId, sCurrentEnvironmentId),
       oEnvironment: oEnvironment
     })),
@@ -1759,20 +1809,59 @@ async function listAvailableEnvironments(oReporter) {
 
   try {
     oReporter.status('Running pac auth who...');
-    sWhoOutput = await runLoggedPacCommand('auth who', oReporter);
+    sWhoOutput = await runLoggedPacCommand('auth who --json', oReporter);
   } catch (oError) {
     oReporter.log('Could not read the active PAC profile. Falling back to env list only.');
   }
 
   oReporter.status('Running pac env list...');
-  let sListOutput = await runLoggedPacCommand('env list', oReporter);
-  let aEnvironments = parseEnvironmentListTextOutput(sListOutput, sWhoOutput);
+  let sListOutput = await runLoggedPacCommand('env list --json', oReporter);
+  let aEnvironments = parseEnvironmentListJsonOutput(sListOutput, sWhoOutput);
 
   if (aEnvironments.length === 0) {
-    aEnvironments = parseEnvironmentListJsonOutput(sListOutput, sWhoOutput);
+    aEnvironments = parseEnvironmentListTextOutput(sListOutput, sWhoOutput);
   }
 
   return aEnvironments.sort((oLeft, oRight) => oLeft.sName.localeCompare(oRight.sName));
+}
+
+async function resolveConfiguredEnvironmentUrl(oReporter) {
+  let sConfiguredEnvironmentId = getConfiguredEnvironmentId();
+  let sWhoOutput = '';
+
+  try {
+    oReporter.status('Reading selected environment...');
+    sWhoOutput = await runLoggedPacCommand('auth who --json', oReporter);
+  } catch (oError) {
+    sWhoOutput = '';
+  }
+
+  let sSelectedEnvironmentUrl = getEnvironmentUrlFromWhoOutput(sWhoOutput);
+  let sSelectedEnvironmentId = getEnvironmentIdFromWhoOutput(sWhoOutput);
+
+  if (sSelectedEnvironmentUrl && (!sConfiguredEnvironmentId || areEnvironmentIdsEquivalent(sConfiguredEnvironmentId, sSelectedEnvironmentId))) {
+    return sSelectedEnvironmentUrl;
+  }
+
+  if (!sConfiguredEnvironmentId) {
+    return sSelectedEnvironmentUrl;
+  }
+
+  try {
+    oReporter.status('Looking up configured environment URL...');
+    let aEnvironments = await listAvailableEnvironments(oReporter);
+    let oConfiguredEnvironment = aEnvironments.find((oEnvironment) => {
+      return areEnvironmentIdsEquivalent(oEnvironment && oEnvironment.sId ? oEnvironment.sId : '', sConfiguredEnvironmentId);
+    });
+
+    if (oConfiguredEnvironment && oConfiguredEnvironment.sUrl) {
+      return normalizeEnvironmentUrl(oConfiguredEnvironment.sUrl);
+    }
+  } catch (oError) {
+    /* Fall back to the selected PAC environment URL when metadata lookup is unavailable. */
+  }
+
+  return sSelectedEnvironmentUrl;
 }
 
 async function deploy() {

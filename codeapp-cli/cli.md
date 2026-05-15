@@ -11,7 +11,8 @@ There is no local `npm install` step and no bundled dependency tree.
 | `codeapp add-data-source --api-id dataverse --resource-name account` | `power-apps add-data-source --api-id dataverse --resource-name account` |
 | `codeapp push` | `power-apps push` |
 | `codeapp list-codeapps` | `power-apps list-codeapps` |
-| `codeapp logout` | `pac auth clear` |
+| `codeapp pac auth who` | Wrapper-managed PAC-compatible auth profile lookup |
+| `codeapp logout` | Wrapper-managed PAC-compatible auth clear |
 | `codeapp list-flows` | `power-apps list-flows --non-interactive` |
 | `codeapp add-flow --flow-id <guid>` | `power-apps add-flow --flow-id <guid> --non-interactive` |
 
@@ -21,4 +22,4 @@ Run the wrapper with:
 node ./bin/codeapp.js --help
 ```
 
-Use PAC directly for authentication and environment selection from the extension UI.
+The extension UI routes PAC authentication and environment commands through the wrapper's PAC-compatibility layer, backed by the same local `@microsoft/power-apps-cli` install.

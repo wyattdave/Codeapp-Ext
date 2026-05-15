@@ -2,13 +2,16 @@
   "name": "codeappjsext",
   "displayName": "CodeAppJS",
   "description": "VS Code wrapper for Power Apps Code App workflows using PAC and lightweight local command wrappers",
-  "version": "2.0.0",
+  "version": "2.0.4",
   "icon": "codeapp-js.png",
   "publisher": "PowerDevBox",
   "repository": "https://github.com/wyattdave/Codeapp-Ext",
   "engines": {
     "vscode": "^1.95.0"
   },
+  "os": [
+    "win32"
+  ],
   "categories": [
     "Other"
   ],
@@ -193,10 +196,11 @@
   },
   "scripts": {
     "lint": "eslint src --ext js",
-    "package": "vsce package"
+    "package": "vsce package",
+    "package:win32-x64": "vsce package --target win32-x64"
   },
   "devDependencies": {
-    "@vscode/vsce": "^2.22.0"
+    "@vscode/vsce": "^3.9.1"
   },
   "dependencies": {
     "@microsoft/power-apps-cli": "^0.10.0"

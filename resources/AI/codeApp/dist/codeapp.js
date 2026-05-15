@@ -1,4 +1,4 @@
-// last update v1.1.1
+// last update v2.0.1
 import { getClient, getContext, callActionAsync } from "./power-apps-data.js";
 
 // ── Initialize SDK & Client ────────────────────────────────────
@@ -364,7 +364,7 @@ function initConnectorClientWithCandidates(aDataSourceCandidates, oApis) {
   return getClient(dataSourcesInfo);
 }
 
-async function execConnectorOpWithCandidates(aDataSourceCandidates, oApis, sConnectorName, operationName, parameters) {
+export async function execConnectorOpWithCandidates(aDataSourceCandidates, oApis, sConnectorName, operationName, parameters) {
   const client = await initConnectorClientWithCandidates(aDataSourceCandidates, oApis);
   const aErrors = [];
 

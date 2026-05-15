@@ -1,7 +1,7 @@
 /* power-apps-data.js - Standalone Power Apps SDK for Code Apps
    Converted from @microsoft/power-apps v1.0.4
    Zero dependencies - all code is self-contained
-   Version 2.0.2: outlook fix
+   Version 2.0.3: teams fix
    sdk v1.0.17*/
    
 var __defProp = Object.defineProperty;
