@@ -786,6 +786,7 @@ function getCommandSpec() {
         sExecutableName: S_POWER_APPS_COMMAND,
         sExecutable: resolveExecutable(S_POWER_APPS_COMMAND),
         aExecutableArgs: ['add-data-source'].concat(mapArgs(normalizeHelpArgs(aRest), {
+          '--org-url': '--org-url',
           '--resource-name': '--resource-name',
           '--solution-id': '--solution-id',
           '--connection-id': '--connection-id',

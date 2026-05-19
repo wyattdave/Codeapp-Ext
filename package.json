@@ -2,7 +2,7 @@
   "name": "codeappjsext",
   "displayName": "CodeAppJS",
   "description": "VS Code wrapper for Power Apps Code App workflows using PAC and lightweight local command wrappers",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "icon": "codeapp-js.png",
   "publisher": "PowerDevBox",
   "repository": "https://github.com/wyattdave/Codeapp-Ext",
