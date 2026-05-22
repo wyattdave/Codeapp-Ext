@@ -1,5 +1,4 @@
 const vscode = require('vscode');
-const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { runCodeAppCommand, runShellCommand, ensureCodeAppCliReady, getCodeAppCliCommand, getWorkspaceRoot } = require('./codeappCli');
@@ -10,7 +9,7 @@ const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
 const S_ENVIRONMENT_PLACEHOLDER = '<ENVIRONMENT ID>';
 const S_AGENT_DIRECTORY_RELATIVE_PATH = 'agent';
 const S_DEBUGGER_SNIPPET = "import { enableDebugger } from './codeapp.js';\nenableDebugger();\n";
-const S_POWER_APPS_COMMAND = 'power-apps';
+const S_CODEAPP_COMMAND = 'codeapp-js-cli';
 
 function getConnectionSyncOutput() {
   if (!oConnectionSyncOutput) {
@@ -81,6 +80,7 @@ function createCommandReporter(oPanel, sTitle, sInitialStatus, oOptions = {}) {
   let sLastStatus = sInitialStatus || 'Working...';
   let oOutput = getCommandOutput(sTitle);
   let bShowOnStart = oOptions.bShowOnStart === true;
+  let bShowOnError = oOptions.bShowOnError === true;
 
   return {
     start() {
@@ -103,7 +103,7 @@ function createCommandReporter(oPanel, sTitle, sInitialStatus, oOptions = {}) {
     finish(sState, sText) {
       sLastStatus = sText || sLastStatus;
       oOutput.appendLine('[' + sState + '] ' + sLastStatus);
-      if (sState === 'error') {
+      if (sState === 'error' && bShowOnError) {
         oOutput.show(true);
       }
     },
@@ -114,7 +114,7 @@ function createCommandReporter(oPanel, sTitle, sInitialStatus, oOptions = {}) {
 }
 
 async function runLoggedCodeAppCommand(sCommand, oReporter, oRunOptions = {}) {
-  oReporter.log('> codeapp ' + sCommand);
+  oReporter.log('> codeapp-js-cli ' + sCommand);
   return await runCodeAppCommand(sCommand, {
     cwd: oRunOptions.cwd,
     env: oRunOptions.env,
@@ -159,7 +159,7 @@ async function runLoggedPowerAppsCommand(sCommand, oReporter, oRunOptions = {}) 
     oEnv.ENVIRONMENT_ID = getPacSelectableEnvironmentId(sEnvironmentId);
   }
 
-  oReporter.log('> ' + S_POWER_APPS_COMMAND + ' ' + sResolvedCommand);
+  oReporter.log('> ' + S_CODEAPP_COMMAND + ' ' + sResolvedCommand);
   return await runCodeAppCommand(sResolvedCommand, {
     cwd: oRunOptions.cwd,
     env: oEnv,
@@ -199,6 +199,16 @@ function getConfiguredEnvironmentId() {
     let { oConfig } = getPowerConfig();
     let sEnvironmentId = normalizeEnvironmentId(oConfig && oConfig.environmentId ? oConfig.environmentId : '');
     return sEnvironmentId && sEnvironmentId.indexOf('<') === -1 ? sEnvironmentId : '';
+  } catch (oError) {
+    return '';
+  }
+}
+
+function getConfiguredAppId() {
+  try {
+    let { oConfig } = getPowerConfig();
+    let sAppId = String(oConfig && oConfig.appId ? oConfig.appId : '').trim();
+    return new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', 'i').test(sAppId) ? sAppId : '';
   } catch (oError) {
     return '';
   }
@@ -351,12 +361,17 @@ async function toggleDebugger() {
 
     let sContent = fs.readFileSync(oState.sIndexPath, 'utf8');
     let bEnable = !oState.bEnabled;
-    let sUpdatedContent = bEnable ? enableDebuggerInContent(sContent) : disableDebuggerInContent(sContent);
-
-    if (sUpdatedContent !== sContent) {
+    if (bEnable) {
       oReporter.start();
-      oReporter.status(bEnable ? 'Enabling debugger...' : 'Disabling debugger...');
-      fs.writeFileSync(oState.sIndexPath, sUpdatedContent, 'utf8');
+      oReporter.status('Running CAP debugger...');
+      await runLoggedCodeAppCommand('debugger', oReporter);
+    } else {
+      let sUpdatedContent = disableDebuggerInContent(sContent);
+      if (sUpdatedContent !== sContent) {
+        oReporter.start();
+        oReporter.status('Disabling debugger...');
+        fs.writeFileSync(oState.sIndexPath, sUpdatedContent, 'utf8');
+      }
     }
 
     let sMessage = bEnable ? 'Debugger enabled in ' + toWorkspaceRelativePath(oState.sIndexPath) + '.' : 'Debugger disabled in ' + toWorkspaceRelativePath(oState.sIndexPath) + '.';
@@ -571,7 +586,7 @@ function getEnvironmentIdFromWhoOutput(sOutput) {
     return normalizeEnvironmentId(oParsed.EnvironmentId);
   }
 
-  let oMatch = new RegExp('Environment ID:\\s*(\\S+)', 'i').exec(sOutput || '');
+  let oMatch = new RegExp('(?:Org URL|Dynamics URL):\s*(https://\S+)', 'i').exec(sOutput || '');
   return oMatch ? normalizeEnvironmentId(oMatch[1]) : '';
 }
 
@@ -642,7 +657,7 @@ function parseEnvironmentListJsonOutput(sOutput, sWhoOutput) {
         let oEnvironmentIdentifier = oEnvironment && oEnvironment.EnvironmentIdentifier ? oEnvironment.EnvironmentIdentifier : {};
         let bIsDefault = Boolean(oEnvironmentIdentifier.IsDefault) || Number(oEnvironmentIdentifier.Type) === 2 || Boolean(oEnvironment && oEnvironment.IsDefault);
         let sEnvironmentId = buildStoredEnvironmentId(
-          oEnvironmentIdentifier.Id || oEnvironment?.EnvironmentId || oEnvironment?.Id || '',
+          oEnvironmentIdentifier.Id || oEnvironment?.EnvironmentId || oEnvironment?.Id || oEnvironment?.name || oEnvironment?.environmentId || '',
           bIsDefault
         );
         if (!sEnvironmentId) {
@@ -650,9 +665,9 @@ function parseEnvironmentListJsonOutput(sOutput, sWhoOutput) {
         }
 
         return {
-          sName: oEnvironment.FriendlyName || oEnvironment.UniqueName || sEnvironmentId,
+          sName: oEnvironment.FriendlyName || oEnvironment.UniqueName || oEnvironment.displayName || oEnvironment.name || sEnvironmentId,
           sId: sEnvironmentId,
-          sUrl: oEnvironment.EnvironmentUrl || '',
+          sUrl: oEnvironment.EnvironmentUrl || oEnvironment.dynamicsUrl || oEnvironment.instanceApiUrl || '',
           bActive: false
         };
       })
@@ -727,9 +742,12 @@ function updatePowerConfigEnvironmentId(sEnvironmentId) {
 
 function extractPowerAppsUrl(sOutput) {
   let sNormalizedOutput = String(sOutput || '')
-    .replace(new RegExp('\\u001b\\[[0-9;]*m', 'g'), '')
+    .replace(new RegExp('\\u001b\\][^\\u0007]*(?:\\u0007|\\u001b\\\\)', 'g'), '')
+    .replace(new RegExp('\\u001b\\[[0-9;?]*[ -/]*[@-~]', 'g'), '')
+    .replace(new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g'), '')
     .replace(new RegExp('\r', 'g'), '');
-  let oMatch = new RegExp('https://apps\\.powerapps\\.com/play/[^\\s"\'<>]+', 'i').exec(sNormalizedOutput);
+  let oMatch = new RegExp('https://apps\\.powerapps\\.com/play/e/[^\\s"\'<>]+/app/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[^\\s"\'<>]*', 'i').exec(sNormalizedOutput) ||
+    new RegExp('https://apps\\.powerapps\\.com/play/[^\\s"\'<>]+', 'i').exec(sNormalizedOutput);
   if (!oMatch) {
     return '';
   }
@@ -738,8 +756,64 @@ function extractPowerAppsUrl(sOutput) {
 }
 
 function getAppIdFromPowerAppsUrl(sUrl) {
-  let oMatch = new RegExp('/app/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/?#]|$)', 'i').exec(sUrl || '');
+  let oMatch = new RegExp('/app/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/?#]|$)', 'i').exec(sUrl || '') ||
+    new RegExp('/a/app/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/?#]|$)', 'i').exec(sUrl || '');
   return oMatch ? oMatch[1] : '';
+}
+
+function getTenantIdFromEnvironmentId(sEnvironmentId) {
+  let sNormalizedEnvironmentId = normalizeEnvironmentId(sEnvironmentId);
+  let oDefaultMatch = new RegExp('^Default-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$', 'i').exec(sNormalizedEnvironmentId);
+  return oDefaultMatch ? oDefaultMatch[1].toLowerCase() : '';
+}
+
+function buildPowerAppsPlayUrl(sEnvironmentId, sAppId) {
+  let sNormalizedEnvironmentId = normalizeEnvironmentId(sEnvironmentId).toLowerCase();
+  let sNormalizedAppId = String(sAppId || '').trim().toLowerCase();
+  if (!sNormalizedEnvironmentId || !sNormalizedAppId) {
+    return '';
+  }
+
+  let sUrl = 'https://apps.powerapps.com/play/e/' + encodeURIComponent(sNormalizedEnvironmentId) + '/app/' + encodeURIComponent(sNormalizedAppId);
+  let sTenantId = getTenantIdFromEnvironmentId(sNormalizedEnvironmentId);
+  if (sTenantId) {
+    sUrl += '?tenantId=' + encodeURIComponent(sTenantId) + '&source=portal';
+  }
+  return sUrl;
+}
+
+function extractAppIdFromDeployOutput(sOutput) {
+  let sNormalizedOutput = String(sOutput || '')
+    .replace(new RegExp('\\u001b\\[[0-9;]*m', 'g'), '')
+    .replace(new RegExp('\r', 'g'), '');
+  let aPatterns = [
+    new RegExp('"appId"\\s*:\\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"', 'i'),
+    new RegExp('appId\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'i'),
+    new RegExp('app id\\s*[:=]?\\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'i')
+  ];
+
+  for (let iIndex = 0; iIndex < aPatterns.length; iIndex++) {
+    let oMatch = aPatterns[iIndex].exec(sNormalizedOutput);
+    if (oMatch) {
+      return oMatch[1];
+    }
+  }
+
+  return '';
+}
+
+function getDeployOutputDetails(sOutput) {
+  let sNormalizedOutput = String(sOutput || '')
+    .replace(new RegExp('\\u001b\\[[0-9;]*m', 'g'), '')
+    .replace(new RegExp('\r', 'g'), '')
+    .trim();
+
+  if (!sNormalizedOutput) {
+    return 'No deploy output was captured from CAP deploy.';
+  }
+
+  let aLines = sNormalizedOutput.split('\n').map((sLine) => sLine.trim()).filter((sLine) => sLine);
+  return aLines.slice(Math.max(0, aLines.length - 20)).join('\n');
 }
 
 function updatePowerConfigAppId(sAppId) {
@@ -1293,11 +1367,11 @@ function parseFlowListOutput(sOutput) {
 
 async function listAvailableFlows(oReporter) {
   try {
-    oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' list-flows --json...');
+    oReporter.status('Running CAP flow list --json...');
     return parseFlowListOutput(await runLoggedPowerAppsCommand('list-flows --json', oReporter));
   } catch (oJsonError) {
     oReporter.log('JSON flow listing was unavailable. Retrying with plain text output.');
-    oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' list-flows...');
+    oReporter.status('Running CAP flow list...');
     return parseFlowListOutput(await runLoggedPowerAppsCommand('list-flows', oReporter));
   }
 }
@@ -1328,79 +1402,29 @@ async function addDataverseSchema(oPanel = null, sTableName = '') {
     }
 
     let sWorkspacePowerConfigPath = getPowerConfigPath();
-    let sWorkspacePowerDirectory = path.join(sRoot, '.power');
     if (!sWorkspacePowerConfigPath || !fs.existsSync(sWorkspacePowerConfigPath)) {
       throw new Error('power.config.json was not found in the workspace root.');
     }
 
-    let sTempWorkingDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'codeapp-dataverse-'));
-    let sTempPowerConfigPath = path.join(sTempWorkingDirectory, 'power.config.json');
-    let sTempDataverseSchemaDirectory = path.join(sTempWorkingDirectory, '.power', 'schemas', 'dataverse');
-    let sTempPowerDirectory = path.join(sTempWorkingDirectory, '.power');
-    let sTempSrcDirectory = path.join(sTempWorkingDirectory, 'src');
-    let sAgentDirectory = getAgentDirectory();
-    let sEnvironmentUrl = await resolveConfiguredEnvironmentUrl(oReporter);
-
     oReporter.start();
-    oReporter.status('Running codeapp add-data-source...');
+    oReporter.status('Running CAP dataverse...');
     oReporter.log('Adding Dataverse data source for table: ' + sResolvedTableName);
 
     try {
-      if (!sEnvironmentUrl) {
-        throw new Error('No Dataverse environment URL was found. Use Change Environment or sign in again before adding schema.');
+      await runLoggedCodeAppCommand('dataverse ' + quoteShellArgument(sResolvedTableName), oReporter);
+    } catch (oError) {
+      let sError = typeof oError === 'string' ? oError : (oError && oError.message ? oError.message : String(oError));
+      if (!isExistingDataSourceError(sError)) {
+        throw new Error(sError);
       }
 
-      fs.copyFileSync(sWorkspacePowerConfigPath, sTempPowerConfigPath);
+      oReporter.log('Data source already exists.');
+    }
 
-      try {
-        await runLoggedCodeAppCommand(
-          'add-data-source --api-id dataverse --resource-name ' + quoteShellArgument(sResolvedTableName) + ' --org-url ' + quoteShellArgument(sEnvironmentUrl),
-          oReporter,
-          {
-            cwd: sTempWorkingDirectory,
-            env: {
-              ENV_URL: sEnvironmentUrl
-            }
-          }
-        );
-      } catch (oError) {
-        let sError = typeof oError === 'string' ? oError : (oError && oError.message ? oError.message : String(oError));
-        if (!isExistingDataSourceError(sError)) {
-          throw new Error(sError);
-        }
-
-        oReporter.log('Data source already exists.');
-      }
-
-      if (!fs.existsSync(sTempPowerConfigPath)) {
-        throw new Error('Generated power.config.json was not found after add-data-source completed.');
-      }
-
-      fs.copyFileSync(sTempPowerConfigPath, sWorkspacePowerConfigPath);
-      oReporter.log('Updated power.config.json.');
-
-      oReporter.status('Moving generated Dataverse schema files...');
-      let aMovedFiles = moveDataverseSchemaFilesToAgentFolder(sTempDataverseSchemaDirectory, sAgentDirectory);
-      if (aMovedFiles.length === 0) {
-        throw new Error('No Dataverse schema files were generated.');
-      }
-
-      aMovedFiles.forEach((sMovedPath) => {
-        oReporter.log('Moved schema file to ' + toWorkspaceRelativePath(sMovedPath));
-      });
-
-      oReporter.status('Cleaning temporary generation folders...');
-      removeDirectoryIfExists(sWorkspacePowerDirectory);
-      oReporter.log('Deleted workspace .power folder.');
-      let sMessage = 'Dataverse schema ready for table: ' + sResolvedTableName + ' (' + aMovedFiles.length + ' file' + (aMovedFiles.length === 1 ? '' : 's') + ' moved to agent).';
-      oReporter.finish('done', sMessage);
-      if (!oReporter.hasPanel()) {
-        vscode.window.showInformationMessage(sMessage);
-      }
-    } finally {
-      removeDirectoryIfExists(sTempPowerDirectory);
-      removeDirectoryIfExists(sTempSrcDirectory);
-      removeDirectoryIfExists(sTempWorkingDirectory);
+    let sMessage = 'Dataverse schema ready for table: ' + sResolvedTableName + '.';
+    oReporter.finish('done', sMessage);
+    if (!oReporter.hasPanel()) {
+      vscode.window.showInformationMessage(sMessage);
     }
   };
 
@@ -1446,7 +1470,7 @@ async function addFlowSchema() {
   }
 
   if (!aFlows.length) {
-    let sMessage = 'No flows were returned by ' + S_POWER_APPS_COMMAND + ' list-flows.';
+    let sMessage = 'No flows were returned by CAP flow.';
     oReporter.log(sMessage);
     oReporter.finish('error', sMessage);
     vscode.window.showWarningMessage(sMessage);
@@ -1492,30 +1516,9 @@ async function addFlowSchema() {
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Adding flow schema...', cancellable: false },
       async () => {
-        try {
-          oReporter.status('Running ' + S_POWER_APPS_COMMAND + ' add-flow...');
-          oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
-          await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
-
-          oReporter.status('Moving generated flow schema files...');
-          let aMovedFiles = moveFlowSchemaFilesToAgentFolder(sFlowSchemaDirectory, sAgentDirectory);
-          if (aMovedFiles.length === 0) {
-            throw new Error('No flow schema files were generated.');
-          }
-
-          aMovedFiles.forEach((sMovedPath) => {
-            oReporter.log('Moved flow schema file to ' + toWorkspaceRelativePath(sMovedPath));
-          });
-        } finally {
-          oReporter.status('Cleaning generated flow folders...');
-          removeDirectoryIfExists(sWorkspacePowerDirectory);
-          oReporter.log('Deleted workspace .power folder.');
-
-          if (sWorkspaceSrcDirectory && !bWorkspaceSrcDirectoryExisted && fs.existsSync(sWorkspaceSrcDirectory)) {
-            removeDirectoryIfExists(sWorkspaceSrcDirectory);
-            oReporter.log('Deleted workspace src folder created by add-flow.');
-          }
-        }
+        oReporter.status('Running CAP flow...');
+        oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
+        await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
       }
     );
 
@@ -1677,8 +1680,8 @@ async function authenticate() {
     let sAuthOutput = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Sign in to Power Platform', cancellable: false },
       async () => {
-        oReporter.status('Running pac auth create...');
-        return await runLoggedPacCommand('auth create --json', oReporter);
+        oReporter.status('Running CAP auth...');
+        return await runLoggedCodeAppCommand('auth', oReporter);
       }
     );
 
@@ -1723,7 +1726,7 @@ async function changeEnvironment(oContext = null) {
   }
 
   if (!aEnvironments.length) {
-    let sMessage = 'No environments were returned by pac env list.';
+    let sMessage = 'No environments were returned by CAP environment.';
     oReporter.log(sMessage);
     oReporter.finish('error', sMessage);
     vscode.window.showWarningMessage(sMessage);
@@ -1767,8 +1770,8 @@ async function applyEnvironmentSelection(sEnvId, oContext = null) {
 
   try {
     oReporter.start();
-    oReporter.status('Running pac env select...');
-    await runLoggedPacCommand('env select --environment ' + quoteShellArgument(getPacSelectableEnvironmentId(sNormalizedEnvId)), oReporter);
+    oReporter.status('Running CAP environment select...');
+    await runLoggedPacCommand('env select --environment ' + quoteShellArgument(sNormalizedEnvId), oReporter);
   } catch (oError) {
     let sMessage = 'Environment switch failed: ' + normalizeErrorMessage(oError);
     oReporter.log(sMessage);
@@ -1806,15 +1809,7 @@ async function applyEnvironmentSelection(sEnvId, oContext = null) {
 
 async function listAvailableEnvironments(oReporter) {
   let sWhoOutput = '';
-
-  try {
-    oReporter.status('Running pac auth who...');
-    sWhoOutput = await runLoggedPacCommand('auth who --json', oReporter);
-  } catch (oError) {
-    oReporter.log('Could not read the active PAC profile. Falling back to env list only.');
-  }
-
-  oReporter.status('Running pac env list...');
+  oReporter.status('Running CAP environment...');
   let sListOutput = await runLoggedPacCommand('env list --json', oReporter);
   let aEnvironments = parseEnvironmentListJsonOutput(sListOutput, sWhoOutput);
 
@@ -1870,7 +1865,7 @@ async function deploy() {
     return;
   }
 
-  let oReporter = createCommandReporter(null, 'Deploy', 'Starting codeapp push...', { bShowOnStart: false });
+  let oReporter = createCommandReporter(null, 'Deploy', 'Starting CAP deploy...', { bShowOnStart: false });
   let oDeployResult = null;
   let oSanitizedConfigState = null;
 
@@ -1885,16 +1880,23 @@ async function deploy() {
       );
     }
 
-    oReporter.status('Running codeapp push...');
+    oReporter.status('Running CAP deploy...');
     oReporter.log('Starting deploy...');
-    let sDeployOutput = await runLoggedCodeAppCommand('push', oReporter, { bReturnCombinedOutput: true });
+    let sDeployOutput = await runLoggedCodeAppCommand('deploy', oReporter, { bReturnCombinedOutput: true });
     let sAppUrl = extractPowerAppsUrl(sDeployOutput);
-    let sAppId = getAppIdFromPowerAppsUrl(sAppUrl);
+    let sAppId = getAppIdFromPowerAppsUrl(sAppUrl) || extractAppIdFromDeployOutput(sDeployOutput) || getConfiguredAppId();
+    if (!sAppUrl && sAppId) {
+      sAppUrl = buildPowerAppsPlayUrl(getConfiguredEnvironmentId(), sAppId);
+    }
 
     if (sAppUrl) {
       oReporter.log('App URL: ' + sAppUrl);
+    } else if (sAppId) {
+      oReporter.log('No app URL was found in the deploy output, but appId was detected: ' + sAppId);
     } else {
-      oReporter.log('No app URL was found in the deploy output.');
+      let sDeployDetails = getDeployOutputDetails(sDeployOutput);
+      oReporter.log('CAP deploy completed but did not return an app URL or appId. Captured deploy output:');
+      oReporter.log(sDeployDetails);
     }
 
     let aMessageParts = ['Deploy complete.'];
@@ -1918,7 +1920,7 @@ async function deploy() {
 
   try {
     oDeployResult = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Deploying with codeapp push...', cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: 'Deploying with CAP deploy...', cancellable: false },
       async () => {
         return await fnRunDeploy();
       }

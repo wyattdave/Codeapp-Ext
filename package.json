@@ -1,7 +1,7 @@
 {
   "name": "codeappjsext",
   "displayName": "CodeAppJS",
-  "description": "VS Code wrapper for Power Apps Code App workflows using PAC and lightweight local command wrappers",
+  "description": "VS Code wrapper for Power Apps Code App workflows using codeapp-js-cli",
   "version": "2.0.5",
   "icon": "codeapp-js.png",
   "publisher": "PowerDevBox",
@@ -19,7 +19,8 @@
     "power platform",
     "code apps",
     "dataverse",
-    "codeapp-cli",
+    "codeapp-js-cli",
+    "cap",
     "Power Apps"
   ],
   "activationEvents": [
@@ -203,6 +204,6 @@
     "@vscode/vsce": "^3.9.1"
   },
   "dependencies": {
-    "@microsoft/power-apps-cli": "^0.10.0"
+    "codeapp-js-cli": "^1.0.1"
   }
 }
