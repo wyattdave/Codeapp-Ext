@@ -10,6 +10,32 @@ const S_ENVIRONMENT_PLACEHOLDER = '<ENVIRONMENT ID>';
 const S_AGENT_DIRECTORY_RELATIVE_PATH = 'agent';
 const S_DEBUGGER_SNIPPET = "import { enableDebugger } from './codeapp.js';\nenableDebugger();\n";
 const S_CODEAPP_COMMAND = 'codeapp-js-cli';
+const A_DATAVERSE_TABLE_OWNERSHIP_TYPES = ['UserOwned', 'OrganizationOwned'];
+const A_DATAVERSE_TABLE_FIELD_TYPES = [
+  { sType: 'text', sLabel: 'Text' },
+  { sType: 'autonumber', sLabel: 'Autonumber' },
+  { sType: 'email', sLabel: 'Email' },
+  { sType: 'phone', sLabel: 'Phone' },
+  { sType: 'url', sLabel: 'URL' },
+  { sType: 'ticker', sLabel: 'Ticker Symbol' },
+  { sType: 'timezone', sLabel: 'Time Zone' },
+  { sType: 'language', sLabel: 'Language' },
+  { sType: 'multilineText', sLabel: 'Multiline Text' },
+  { sType: 'richText', sLabel: 'Rich Text' },
+  { sType: 'wholeNumber', sLabel: 'Whole Number' },
+  { sType: 'bigInt', sLabel: 'Big Integer' },
+  { sType: 'decimal', sLabel: 'Decimal Number' },
+  { sType: 'float', sLabel: 'Floating Point Number' },
+  { sType: 'currency', sLabel: 'Currency' },
+  { sType: 'yesNo', sLabel: 'Yes/No' },
+  { sType: 'dateTime', sLabel: 'Date and Time' },
+  { sType: 'dateOnly', sLabel: 'Date Only' },
+  { sType: 'choice', sLabel: 'Choice' },
+  { sType: 'choices', sLabel: 'Choices' },
+  { sType: 'lookup', sLabel: 'Lookup' },
+  { sType: 'file', sLabel: 'File' },
+  { sType: 'image', sLabel: 'Image' }
+];
 
 function getConnectionSyncOutput() {
   if (!oConnectionSyncOutput) {
@@ -1217,6 +1243,243 @@ function quoteShellArgument(sValue) {
   return '"' + String(sValue || '').replace(new RegExp('"', 'g'), '\\"') + '"';
 }
 
+function buildDataverseTableFieldSpec(oField) {
+  let sDisplayName = String(oField && oField.sDisplayName || '').trim();
+  let sType = String(oField && oField.sType || '').trim();
+  let sDetails = String(oField && oField.sDetails || '').trim();
+  let sSpec = sDisplayName + ':' + sType;
+
+  if (sDetails) {
+    sSpec += ':' + sDetails;
+  }
+
+  return sSpec;
+}
+
+async function promptForDataverseTableField() {
+  let sDisplayName = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Column display name',
+    placeHolder: 'Status',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Column display name is required.'
+  });
+
+  if (sDisplayName === undefined) {
+    return null;
+  }
+
+  let oTypeSelection = await vscode.window.showQuickPick(
+    A_DATAVERSE_TABLE_FIELD_TYPES.map((oFieldType) => ({
+      label: oFieldType.sLabel,
+      description: oFieldType.sType,
+      oFieldType: oFieldType
+    })),
+    {
+      title: 'Create Dataverse Table',
+      placeHolder: 'Select a column type',
+      ignoreFocusOut: true
+    }
+  );
+
+  if (!oTypeSelection) {
+    return null;
+  }
+
+  let sType = oTypeSelection.oFieldType.sType;
+  let sDetails = '';
+
+  if (sType === 'choice' || sType === 'choices') {
+    sDetails = await vscode.window.showInputBox({
+      title: 'Create Dataverse Table',
+      prompt: 'Options separated by |',
+      placeHolder: 'New|Active|Closed',
+      ignoreFocusOut: true,
+      validateInput: (sValue) => sValue && sValue.trim() ? null : 'At least one option is required.'
+    });
+
+    if (sDetails === undefined) {
+      return null;
+    }
+  } else if (sType === 'lookup') {
+    sDetails = await vscode.window.showInputBox({
+      title: 'Create Dataverse Table',
+      prompt: 'Target table logical name',
+      placeHolder: 'account',
+      ignoreFocusOut: true,
+      validateInput: (sValue) => sValue && sValue.trim() ? null : 'Target table logical name is required.'
+    });
+
+    if (sDetails === undefined) {
+      return null;
+    }
+  }
+
+  return {
+    sDisplayName: sDisplayName.trim(),
+    sType: sType,
+    sDetails: String(sDetails || '').trim()
+  };
+}
+
+async function promptForDataverseTableDefinition() {
+  let sDisplayName = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Table display name',
+    placeHolder: 'Project',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Table display name is required.'
+  });
+
+  if (sDisplayName === undefined) {
+    return null;
+  }
+
+  let sSchemaName = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Schema name (optional)',
+    placeHolder: 'new_Project',
+    ignoreFocusOut: true
+  });
+
+  if (sSchemaName === undefined) {
+    return null;
+  }
+
+  let sPublisherPrefix = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Publisher prefix',
+    value: 'new',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Publisher prefix is required.'
+  });
+
+  if (sPublisherPrefix === undefined) {
+    return null;
+  }
+
+  let sPluralName = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Plural display name',
+    value: sDisplayName.trim() + 's',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Plural display name is required.'
+  });
+
+  if (sPluralName === undefined) {
+    return null;
+  }
+
+  let sPrimaryDisplayName = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Primary name column display name',
+    value: 'Name',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Primary name column display name is required.'
+  });
+
+  if (sPrimaryDisplayName === undefined) {
+    return null;
+  }
+
+  let sDescription = await vscode.window.showInputBox({
+    title: 'Create Dataverse Table',
+    prompt: 'Description (optional)',
+    value: sDisplayName.trim(),
+    ignoreFocusOut: true
+  });
+
+  if (sDescription === undefined) {
+    return null;
+  }
+
+  let oOwnershipSelection = await vscode.window.showQuickPick(
+    A_DATAVERSE_TABLE_OWNERSHIP_TYPES.map((sOwnershipType) => ({
+      label: sOwnershipType,
+      description: sOwnershipType === 'UserOwned' ? 'Records are owned by users or teams.' : 'Records are owned by the organization.'
+    })),
+    {
+      title: 'Create Dataverse Table',
+      placeHolder: 'Select table ownership',
+      ignoreFocusOut: true
+    }
+  );
+
+  if (!oOwnershipSelection) {
+    return null;
+  }
+
+  let aFields = [];
+  while (true) {
+    let oAddFieldSelection = await vscode.window.showQuickPick(
+      [
+        { label: 'Add Column', description: 'Add a custom Dataverse column now.' },
+        { label: 'Continue', description: 'Create the table with the current definition.' }
+      ],
+      {
+        title: 'Create Dataverse Table',
+        placeHolder: aFields.length ? 'Add another column or continue' : 'Add a column or continue',
+        ignoreFocusOut: true
+      }
+    );
+
+    if (!oAddFieldSelection) {
+      return null;
+    }
+
+    if (oAddFieldSelection.label === 'Continue') {
+      break;
+    }
+
+    let oField = await promptForDataverseTableField();
+    if (!oField) {
+      return null;
+    }
+
+    aFields.push(oField);
+  }
+
+  return {
+    sDisplayName: sDisplayName.trim(),
+    sSchemaName: sSchemaName.trim(),
+    sPublisherPrefix: sPublisherPrefix.trim(),
+    sPluralName: sPluralName.trim(),
+    sPrimaryDisplayName: sPrimaryDisplayName.trim(),
+    sDescription: sDescription.trim(),
+    sOwnershipType: oOwnershipSelection.label,
+    aFields: aFields
+  };
+}
+
+function buildDataverseTableCommand(oDefinition) {
+  let aCommandParts = ['table'];
+
+  aCommandParts.push('--display-name ' + quoteShellArgument(oDefinition.sDisplayName));
+  aCommandParts.push('--publisher-prefix ' + quoteShellArgument(oDefinition.sPublisherPrefix));
+  aCommandParts.push('--plural-name ' + quoteShellArgument(oDefinition.sPluralName));
+  aCommandParts.push('--primary-display-name ' + quoteShellArgument(oDefinition.sPrimaryDisplayName));
+  aCommandParts.push('--ownership ' + quoteShellArgument(oDefinition.sOwnershipType));
+
+  if (oDefinition.sSchemaName) {
+    aCommandParts.push('--schema-name ' + quoteShellArgument(oDefinition.sSchemaName));
+  }
+
+  if (oDefinition.sDescription) {
+    aCommandParts.push('--description ' + quoteShellArgument(oDefinition.sDescription));
+  }
+
+  let sEnvironmentId = getConfiguredEnvironmentId();
+  if (sEnvironmentId) {
+    aCommandParts.push('--environment ' + quoteShellArgument(sEnvironmentId));
+  }
+
+  oDefinition.aFields.forEach((oField) => {
+    aCommandParts.push('--field ' + quoteShellArgument(buildDataverseTableFieldSpec(oField)));
+  });
+
+  return aCommandParts.join(' ');
+}
+
 function tryParseJsonText(sOutput) {
   let sTrimmedOutput = String(sOutput || '').trim();
   if (!sTrimmedOutput) {
@@ -1944,22 +2207,18 @@ async function deploy() {
       }
     }
 
+    oReporter.show();
+
     if (!oReporter.hasPanel() && oDeployResult) {
       if (oDeployResult.bHasDetectedUrl) {
-        let sSelection = await vscode.window.showInformationMessage('Deploy complete.', 'Open App', 'Show Log');
+        let sSelection = await vscode.window.showInformationMessage('Deploy complete. The Deploy output has been opened for the full log.', 'Open App');
         if (sSelection === 'Open App') {
           await vscode.env.openExternal(vscode.Uri.parse(oDeployResult.sAppUrl));
-        } else if (sSelection === 'Show Log') {
-          oReporter.show();
         }
       } else {
-        let sSelection = await vscode.window.showWarningMessage(
-          'Deploy complete, but the app URL was not detected. Open the Deploy output to verify the result.',
-          'Show Log'
+        vscode.window.showWarningMessage(
+          'Deploy complete, but the app URL was not detected. Review the Deploy output for the full result.'
         );
-        if (sSelection === 'Show Log') {
-          oReporter.show();
-        }
       }
     }
   } catch (oError) {
@@ -1971,10 +2230,193 @@ async function deploy() {
     let sMessage = 'Deploy failed: ' + normalizeErrorMessage(oError);
     oReporter.log(sMessage);
     oReporter.finish('error', sMessage);
+    oReporter.show();
     if (!oReporter.hasPanel()) {
       vscode.window.showErrorMessage(sMessage);
     }
   }
 }
 
-module.exports = { setupProject, authenticate, changeEnvironment, applyEnvironmentSelection, deploy, toggleDebugger, addDataverseSchema, addFlowSchema };
+async function importProject() {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Import', 'Loading code apps...');
+  let aCodeApps = [];
+
+  try {
+    oReporter.start();
+    let sAppsOutput = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Loading code apps...', cancellable: false },
+      async () => {
+        oReporter.status('Listing code apps...');
+        return await runCodeAppCommand('export');
+      }
+    );
+
+    aCodeApps = Array.isArray(tryParseJsonText(sAppsOutput)) ? tryParseJsonText(sAppsOutput) : [];
+    if (!aCodeApps.length) {
+      throw new Error('No code apps were found in the selected environment.');
+    }
+
+    let oSelectedCodeApp = await vscode.window.showQuickPick(
+      aCodeApps.map((oCodeApp) => ({
+        label: oCodeApp.displayName || '<Unnamed Code App>',
+        description: oCodeApp.id,
+        detail: 'Exports the solution and unpacks it into the workspace.',
+        oCodeApp: oCodeApp
+      })),
+      {
+        title: 'Import Code App',
+        placeHolder: 'Select a code app to import into the workspace',
+        ignoreFocusOut: true,
+        matchOnDescription: true,
+        matchOnDetail: true
+      }
+    );
+
+    if (!oSelectedCodeApp) {
+      return;
+    }
+
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Importing code app...', cancellable: false },
+      async () => {
+        oReporter.status('Running CAP import...');
+        await runLoggedCodeAppCommand('export ' + quoteShellArgument(oSelectedCodeApp.oCodeApp.id), oReporter, { bReturnCombinedOutput: true });
+      }
+    );
+
+    let sMessage = 'Import complete for ' + (oSelectedCodeApp.label || 'the selected code app') + '.';
+    oReporter.log(sMessage);
+    oReporter.finish('done', sMessage);
+
+    let sSelection = await vscode.window.showInformationMessage(sMessage, 'Show Log');
+    if (sSelection === 'Show Log') {
+      oReporter.show();
+    }
+  } catch (oError) {
+    let sMessage = 'Import failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    oReporter.show();
+    vscode.window.showErrorMessage(sMessage);
+  }
+}
+
+async function openMockup() {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Mockup', 'Loading mockups...');
+
+  try {
+    oReporter.start();
+    let sMockupsOutput = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Loading mockups...', cancellable: false },
+      async () => {
+        oReporter.status('Listing mockups...');
+        return await runCodeAppCommand('mockup');
+      }
+    );
+
+    let aMockups = Array.isArray(tryParseJsonText(sMockupsOutput)) ? tryParseJsonText(sMockupsOutput) : [];
+    if (!aMockups.length) {
+      throw new Error('No HTML mockup files were found in agent/.');
+    }
+
+    let sWorkspaceRoot = getWorkspaceRoot();
+    let oSelectedMockup = await vscode.window.showQuickPick(
+      aMockups.map((sMockupPath) => ({
+        label: path.relative(sWorkspaceRoot, sMockupPath) || path.basename(sMockupPath),
+        description: path.basename(sMockupPath),
+        detail: sMockupPath,
+        sMockupPath: sMockupPath
+      })),
+      {
+        title: 'Open Mockup',
+        placeHolder: 'Select a mockup to open in the browser',
+        ignoreFocusOut: true,
+        matchOnDescription: true,
+        matchOnDetail: true
+      }
+    );
+
+    if (!oSelectedMockup) {
+      return;
+    }
+
+    let sMockupTarget = path.relative(sWorkspaceRoot, oSelectedMockup.sMockupPath)
+      .split(path.sep)
+      .join('/');
+
+    if (!sMockupTarget) {
+      sMockupTarget = path.basename(oSelectedMockup.sMockupPath);
+    }
+
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Opening mockup...', cancellable: false },
+      async () => {
+        oReporter.status('Opening mockup...');
+        await runLoggedCodeAppCommand('mockup ' + quoteShellArgument(sMockupTarget), oReporter, { bReturnCombinedOutput: true });
+      }
+    );
+
+    let sMessage = 'Opened mockup ' + oSelectedMockup.label + '.';
+    oReporter.log(sMessage);
+    oReporter.finish('done', sMessage);
+  } catch (oError) {
+    let sMessage = 'Mockup failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    oReporter.show();
+    vscode.window.showErrorMessage(sMessage);
+  }
+}
+
+async function addDataverseTable() {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let oDefinition = await promptForDataverseTableDefinition();
+  if (!oDefinition) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Dataverse Table', 'Starting CAP table...');
+  let sCommand = buildDataverseTableCommand(oDefinition);
+
+  try {
+    oReporter.start();
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Running CAP table...', cancellable: false },
+      async () => {
+        oReporter.status('Running CAP table...');
+        await runLoggedCodeAppCommand(sCommand, oReporter, { bReturnCombinedOutput: true });
+      }
+    );
+
+    let sMessage = 'Dataverse table command complete for ' + oDefinition.sDisplayName + '.';
+    oReporter.log(sMessage);
+    oReporter.finish('done', sMessage);
+
+    let sSelection = await vscode.window.showInformationMessage(sMessage, 'Show Log');
+    if (sSelection === 'Show Log') {
+      oReporter.show();
+    }
+  } catch (oError) {
+    let sMessage = 'Dataverse table failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    oReporter.show();
+    vscode.window.showErrorMessage(sMessage);
+  }
+}
+
+module.exports = { setupProject, authenticate, changeEnvironment, applyEnvironmentSelection, deploy, importProject, openMockup, addDataverseTable, toggleDebugger, addDataverseSchema, addFlowSchema };

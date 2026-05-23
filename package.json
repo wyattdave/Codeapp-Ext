@@ -35,6 +35,11 @@
         "icon": "$(tools)"
       },
       {
+        "command": "codeappjsext.import",
+        "title": "CodeAppJS: Import Code App",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "codeappjsext.auth",
         "title": "CodeAppJS: Authenticate",
         "icon": "$(account)"
@@ -50,9 +55,19 @@
         "icon": "$(plug)"
       },
       {
+        "command": "codeappjsext.table",
+        "title": "CodeAppJS: Add Dataverse Table",
+        "icon": "$(table)"
+      },
+      {
         "command": "codeappjsext.flowSchema",
         "title": "CodeAppJS: Add Flow Schema",
         "icon": "$(references)"
+      },
+      {
+        "command": "codeappjsext.mockup",
+        "title": "CodeAppJS: Open Mockup",
+        "icon": "$(device-desktop)"
       },
       {
         "command": "codeappjsext.debugger",
@@ -73,27 +88,23 @@
     "menus": {
       "editor/title": [
         {
-          "command": "codeappjsext.connections",
+          "command": "codeappjsext.debugger",
           "when": "codeappjsext.buttonsVisible",
           "group": "navigation@1"
         },
         {
-          "command": "codeappjsext.flowSchema",
-          "when": "codeappjsext.buttonsVisible",
-          "group": "navigation@2"
-        },
-        {
-          "command": "codeappjsext.debugger",
-          "when": "codeappjsext.buttonsVisible",
-          "group": "navigation@3"
-        },
-        {
           "command": "codeappjsext.deploy",
           "when": "codeappjsext.buttonsVisible",
-          "group": "navigation@4"
+          "group": "navigation@2"
         }
       ]
     },
+    "keybindings": [
+      {
+        "key": "ctrl+alt+c",
+        "command": "multiCommand.maximizeCopilot"
+      }
+    ],
     "chatAgents": [
       {
         "path": "./resources/AI/AI/codeapp.agent.md",
@@ -204,6 +215,6 @@
     "@vscode/vsce": "^3.9.1"
   },
   "dependencies": {
-    "codeapp-js-cli": "^1.0.1"
+    "codeapp-js-cli": "^1.0.3"
   }
 }

@@ -911,6 +911,18 @@ function normalizeFlowRecordForOutput(oFlow) {
   });
 }
 
+function normalizeCodeAppRecordForOutput(oCodeApp) {
+  if (!oCodeApp || typeof oCodeApp !== 'object') {
+    return oCodeApp;
+  }
+
+  return {
+    id: String(oCodeApp.id || '').trim(),
+    displayName: String(oCodeApp.displayName || '').trim(),
+    raw: oCodeApp.raw || null
+  };
+}
+
 async function runCapFlowListCommand(oOptions = {}) {
   ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
@@ -978,6 +990,97 @@ async function runCapFlowCommand(aArgs, oOptions = {}) {
         cwd: oOptions.cwd || getWorkspaceRoot(),
         env: getSubprocessEnv(oOptions),
         passthroughArgs: ensureArg(aPassthroughArgs, '--non-interactive')
+      });
+    });
+  }, oOptions);
+}
+
+async function runCapExportListCommand(oNamedArgs = {}, oOptions = {}) {
+  ensurePowerAppsCliAuthFallbackPatched();
+  let oCapCore = getCapCore();
+  let aCapturedCodeApps = [];
+
+  await withMutedConsole(async () => {
+    oTerminalSelectorState.fnCaptureItems = (aItems) => {
+      aCapturedCodeApps = Array.isArray(aItems) ? aItems : [];
+    };
+
+    try {
+      await withNonInteractiveTerminal(async () => {
+        await oCapCore.capExport('', {
+          cwd: oOptions.cwd || getWorkspaceRoot(),
+          namedArgs: oNamedArgs
+        });
+      });
+    } finally {
+      oTerminalSelectorState.fnCaptureItems = null;
+    }
+  });
+
+  let sOutput = JSON.stringify(aCapturedCodeApps.map(normalizeCodeAppRecordForOutput), null, 2) + '\n';
+  return writeCommandOutput(sOutput, oOptions);
+}
+
+async function runCapExportCommand(aArgs, oOptions = {}) {
+  ensurePowerAppsCliAuthFallbackPatched();
+  let oCapCore = getCapCore();
+  let aExportArgs = aArgs[0] === 'export' ? aArgs.slice(1) : aArgs.slice();
+  let oParsed = getCapParsedInput(aExportArgs, {
+    valueFlags: ['--environment', '-env'],
+    booleanFlags: ['--help', '-h']
+  });
+
+  if (!oParsed.target && !(oParsed.namedArgs && (oParsed.namedArgs.help || oParsed.namedArgs.h))) {
+    return await runCapExportListCommand(oParsed.namedArgs || {}, oOptions);
+  }
+
+  return await captureConsoleOutput(async () => {
+    await withNonInteractiveTerminal(async () => {
+      await oCapCore.capExport(oParsed.target, {
+        cwd: oOptions.cwd || getWorkspaceRoot(),
+        namedArgs: oParsed.namedArgs || {}
+      });
+    });
+  }, oOptions);
+}
+
+async function runCapMockupListCommand(oOptions = {}) {
+  let oCapCore = getCapCore();
+  let aCapturedMockups = [];
+
+  await withMutedConsole(async () => {
+    oTerminalSelectorState.fnCaptureItems = (aItems) => {
+      aCapturedMockups = Array.isArray(aItems) ? aItems : [];
+    };
+
+    try {
+      await withNonInteractiveTerminal(async () => {
+        await oCapCore.capMockup('', {
+          cwd: oOptions.cwd || getWorkspaceRoot()
+        });
+      });
+    } finally {
+      oTerminalSelectorState.fnCaptureItems = null;
+    }
+  });
+
+  let sOutput = JSON.stringify(aCapturedMockups, null, 2) + '\n';
+  return writeCommandOutput(sOutput, oOptions);
+}
+
+async function runCapMockupCommand(aArgs, oOptions = {}) {
+  let oCapCore = getCapCore();
+  let aMockupArgs = aArgs[0] === 'mockup' ? aArgs.slice(1) : aArgs.slice();
+  let sTarget = aMockupArgs.join(' ').trim();
+
+  if (!sTarget) {
+    return await runCapMockupListCommand(oOptions);
+  }
+
+  return await captureConsoleOutput(async () => {
+    await withNonInteractiveTerminal(async () => {
+      await oCapCore.capMockup(sTarget, {
+        cwd: oOptions.cwd || getWorkspaceRoot()
       });
     });
   }, oOptions);
@@ -1079,6 +1182,14 @@ async function runCodeAppCommand(sCommand, oOptions = {}) {
 
   if (sPrimaryCommand === 'flow' || sPrimaryCommand === 'list-flows' || sPrimaryCommand === 'add-flow') {
     return await runCapFlowCommand(aArgs, oOptions);
+  }
+
+  if (sPrimaryCommand === 'export') {
+    return await runCapExportCommand(aArgs, oOptions);
+  }
+
+  if (sPrimaryCommand === 'mockup') {
+    return await runCapMockupCommand(aArgs, oOptions);
   }
 
   if (sPrimaryCommand === 'deploy' || sPrimaryCommand === 'push') {
