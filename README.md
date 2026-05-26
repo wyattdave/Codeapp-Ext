@@ -1,6 +1,6 @@
 # CodeAppJS Extension
 
-CodeAppJS Extension is a VS Code wrapper around Power Platform CLI workflows for code-first apps. The extension no longer hosts an agent panel or chat harness. It now exposes PAC-driven setup, authentication, environment switching, data source sync, debugger toggling, and deploy actions directly in the editor chrome.
+CodeAppJS Extension is a VS Code wrapper around Power Platform CLI workflows for code-first apps. The extension no longer hosts its own agent panel or chat harness. It now exposes PAC-driven setup, authentication, environment switching, data source sync, debugger toggling, and deploy actions directly in the editor chrome, and it contributes a packaged `codeapp` custom agent plus related skills to Copilot Chat.
 
 This extension is built on [codeapp.js](https://codeappjs.com), which is aimed at developers building Power Apps with HTML, CSS, and JavaScript in a code-first workflow.
 
@@ -8,12 +8,13 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 
 - Top editor buttons for `Debugger` and `Deploy`.
 - Bottom status bar actions for `Deploy`, `Debugger`, `Dataverse`, `Table`, `Flow`, `Mockup`, `Import`, `Setup`, `Env`, and `Auth`.
+- A packaged `codeapp` custom agent in the Copilot Chat agent picker, backed by the bundled `codeapp-js` agent and skill files.
 - Project setup that copies starter files into your workspace and updates `power.config.json` through native VS Code input prompts.
 - Connection reference syncing against the active environment.
 - Code app import that lists available code apps in the selected environment, exports the chosen solution, and unpacks it into the workspace.
 - Mockup launching that lists HTML mockups in `agent/` and opens the selected file in your default browser.
 - One-click deploy through the packaged `codeapp-js-cli` Power Apps runner, including app URL detection and `appId` update when available.
-- A `Ctrl+Alt+C` keybinding for `multiCommand.maximizeCopilot`.
+- A `Ctrl+Alt+D` keybinding for `CodeAppJS: Deploy`.
 
 ## Requirements
 

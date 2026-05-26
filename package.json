@@ -1,9 +1,9 @@
 {
   "name": "codeappjsext",
-  "displayName": "CodeAppJS",
+  "displayName": "CAP - Code Apps",
   "description": "VS Code wrapper for Power Apps Code App workflows using codeapp-js-cli",
-  "version": "2.0.5",
-  "icon": "codeapp-js.png",
+  "version": "2.0.7",
+  "icon": "cap-icon.png",
   "publisher": "PowerDevBox",
   "repository": "https://github.com/wyattdave/Codeapp-Ext",
   "engines": {
@@ -28,6 +28,106 @@
   ],
   "main": "./src/extension.js",
   "contributes": {
+    "chatAgents": [
+      {
+        "path": "./node_modules/codeapp-js/AI/codeapp.agent.md",
+        "sessionTypes": [
+          "local"
+        ]
+      }
+    ],
+    "chatSkills": [
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/autoreview/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/connections/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/dataverse/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/environment-variables/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/frontend-design/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/jira/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/keyvault/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/logicflows/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/office365-groups/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/office365-outlook/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/office365-users/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/sharepoint/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/sql/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/start/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      },
+      {
+        "path": "./node_modules/codeapp-js/AI/skills/teams/SKILL.md",
+        "sessionTypes": [
+          "local"
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "codeappjsext.setup",
@@ -101,108 +201,8 @@
     },
     "keybindings": [
       {
-        "key": "ctrl+alt+c",
-        "command": "multiCommand.maximizeCopilot"
-      }
-    ],
-    "chatAgents": [
-      {
-        "path": "./resources/AI/AI/codeapp.agent.md",
-        "sessionTypes": [
-          "local"
-        ]
-      }
-    ],
-    "chatSkills": [
-      {
-        "path": "./resources/AI/AI/skills/autoreview/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/connections/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/dataverse/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/environment-variables/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/frontend-design/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/jira/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/keyvault/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/logicflows/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/office365-groups/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/office365-outlook/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/office365-users/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/sharepoint/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/sql/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/start/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
-      },
-      {
-        "path": "./resources/AI/AI/skills/teams/SKILL.md",
-        "sessionTypes": [
-          "local"
-        ]
+        "key": "ctrl+alt+d",
+        "command": "codeappjsext.deploy"
       }
     ]
   },
@@ -215,6 +215,12 @@
     "@vscode/vsce": "^3.9.1"
   },
   "dependencies": {
-    "codeapp-js-cli": "^1.0.3"
+    "@azure/msal-node": "3.6.3",
+    "@azure/msal-node-extensions": "1.5.17",
+    "@microsoft/power-apps-actions": "1.4.0",
+    "@microsoft/power-apps-common": "1.1.0",
+    "codeapp-js": "^2.0.3",
+    "codeapp-js-cli": "^1.0.3",
+    "open": "8.4.0"
   }
 }

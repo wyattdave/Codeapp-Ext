@@ -1797,6 +1797,11 @@ async function addFlowSchema() {
 }
 
 async function setupProject(oContext) {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
   let aFolders = vscode.workspace.workspaceFolders;
   if (!aFolders || aFolders.length === 0) {
     vscode.window.showErrorMessage('No workspace folder open. Please open a folder first.');
@@ -1804,66 +1809,7 @@ async function setupProject(oContext) {
   }
 
   let sTargetDir = aFolders[0].uri.fsPath;
-
-  let aSourceDirCandidates = [
-    path.join(oContext.extensionPath, 'resources', 'AI', 'codeApp'),
-    path.join(oContext.extensionPath, 'resources', 'codeApp'),
-    path.join(sTargetDir, 'resources', 'AI', 'codeApp'),
-    path.join(sTargetDir, 'resources', 'codeApp')
-  ];
-
-  let sSourceDir = aSourceDirCandidates.find((sCandidatePath) => fs.existsSync(sCandidatePath));
-
-  if (!sSourceDir) {
-    vscode.window.showErrorMessage('CodeApp source files not found. Ensure resources/AI/codeApp/ exists.');
-    return;
-  }
-
-  try {
-    let aCopiedFiles = copyDirRecursive(sSourceDir, sTargetDir);
-    let sConfigPath = path.join(sTargetDir, 'power.config.json');
-    let bConfigCopied = aCopiedFiles.indexOf(sConfigPath) !== -1;
-
-    if (bConfigCopied) {
-      let bConfigUpdated = await promptForSetupConfigValues(oContext, sConfigPath);
-      if (bConfigUpdated) {
-        vscode.window.showInformationMessage('Project setup complete. power.config.json was updated.');
-      } else {
-        vscode.window.showWarningMessage('Project setup complete, but power.config.json was not updated.');
-      }
-      return;
-    }
-
-    vscode.window.showInformationMessage('Project setup complete! CodeApp files copied to workspace.');
-  } catch (oError) {
-    vscode.window.showErrorMessage('Setup failed: ' + oError.message);
-  }
-}
-
-function copyDirRecursive(sSource, sTarget) {
-  let aCopiedFiles = [];
-  let aEntries = fs.readdirSync(sSource, { withFileTypes: true });
-  aEntries.forEach((oEntry) => {
-    let sSourcePath = path.join(sSource, oEntry.name);
-    let sTargetPath = path.join(sTarget, oEntry.name);
-    if (oEntry.isDirectory()) {
-      if (!fs.existsSync(sTargetPath)) {
-        fs.mkdirSync(sTargetPath, { recursive: true });
-      }
-      aCopiedFiles = aCopiedFiles.concat(copyDirRecursive(sSourcePath, sTargetPath));
-    } else {
-      if (fs.existsSync(sTargetPath)) {
-        vscode.window.showWarningMessage('Skipping existing file: ' + oEntry.name);
-      } else {
-        fs.copyFileSync(sSourcePath, sTargetPath);
-        aCopiedFiles.push(sTargetPath);
-      }
-    }
-  });
-  return aCopiedFiles;
-}
-
-async function promptForSetupConfigValues(oContext, sConfigPath) {
+  let sConfigPath = path.join(sTargetDir, 'power.config.json');
   let oInitialValues = getSetupConfigInitialValues(oContext, sConfigPath);
 
   let sAppDisplayName = await vscode.window.showInputBox({
@@ -1874,7 +1820,7 @@ async function promptForSetupConfigValues(oContext, sConfigPath) {
     validateInput: (sValue) => sValue && sValue.trim() ? null : 'App display name is required.'
   });
   if (sAppDisplayName === undefined) {
-    return false;
+    return;
   }
 
   let sDescription = await vscode.window.showInputBox({
@@ -1884,7 +1830,74 @@ async function promptForSetupConfigValues(oContext, sConfigPath) {
     ignoreFocusOut: true
   });
   if (sDescription === undefined) {
-    return false;
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'CodeAppJS Setup', cancellable: false },
+      async () => {
+        await runCodeAppCommand('setup', {
+          cwd: sTargetDir,
+          appDisplayName: sAppDisplayName.trim(),
+          description: sDescription.trim()
+        });
+      }
+    );
+
+    let bConfigUpdated = await promptForSetupConfigValues(oContext, sConfigPath, {
+      sAppDisplayName: sAppDisplayName.trim(),
+      sDescription: sDescription.trim()
+    });
+    if (bConfigUpdated) {
+      vscode.window.showInformationMessage('Project setup complete. power.config.json was updated.');
+      return;
+    }
+
+    vscode.window.showWarningMessage('Project setup complete, but power.config.json was not updated.');
+  } catch (oError) {
+    vscode.window.showErrorMessage('Setup failed: ' + oError.message);
+  }
+}
+
+async function promptForSetupConfigValues(oContext, sConfigPath, oPresetValues = null) {
+  let oInitialValues = getSetupConfigInitialValues(oContext, sConfigPath);
+  let bHasPresetAppDisplayName = !!(oPresetValues && typeof oPresetValues.sAppDisplayName === 'string');
+  let bHasPresetDescription = !!(oPresetValues && typeof oPresetValues.sDescription === 'string');
+  let sResolvedAppDisplayName = bHasPresetAppDisplayName
+    ? oPresetValues.sAppDisplayName
+    : '';
+  let sResolvedDescription = bHasPresetDescription
+    ? oPresetValues.sDescription
+    : '';
+
+  if (!bHasPresetAppDisplayName) {
+    sResolvedAppDisplayName = await vscode.window.showInputBox({
+      title: 'CodeAppJS Setup',
+      prompt: 'App display name',
+      value: oInitialValues.sAppDisplayName,
+      ignoreFocusOut: true,
+      validateInput: (sValue) => sValue && sValue.trim() ? null : 'App display name is required.'
+    });
+    if (sResolvedAppDisplayName === undefined) {
+      return false;
+    }
+
+    sResolvedAppDisplayName = sResolvedAppDisplayName.trim();
+  }
+
+  if (!bHasPresetDescription) {
+    sResolvedDescription = await vscode.window.showInputBox({
+      title: 'CodeAppJS Setup',
+      prompt: 'Description',
+      value: oInitialValues.sDescription,
+      ignoreFocusOut: true
+    });
+    if (sResolvedDescription === undefined) {
+      return false;
+    }
+
+    sResolvedDescription = sResolvedDescription.trim();
   }
 
   let sLogoPath = await vscode.window.showInputBox({
@@ -1908,8 +1921,8 @@ async function promptForSetupConfigValues(oContext, sConfigPath) {
   }
 
   await updatePowerConfigFile(sConfigPath, {
-    sAppDisplayName: sAppDisplayName.trim(),
-    sDescription: sDescription.trim(),
+    sAppDisplayName: sResolvedAppDisplayName,
+    sDescription: sResolvedDescription,
     sLogoPath: sLogoPath.trim(),
     sEnvironmentId: sEnvironmentId.trim() || S_ENVIRONMENT_PLACEHOLDER
   });

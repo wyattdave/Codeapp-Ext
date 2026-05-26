@@ -1,5 +1,7 @@
 .github/**
 .vscode/**
+resources/**
+codeapp-cli/**
 *.vsix
 **/*.map
 .gitignore
@@ -51,3 +53,5 @@ packages/**
 **/node_modules/**/*.c
 **/node_modules/**/*.h
 **/node_modules/**/binding.Makefile
+**/node_modules/@github/**
+!node_modules/codeapp-js/AI/**

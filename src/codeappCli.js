@@ -1111,6 +1111,23 @@ async function runCapDeployCommand(aArgs, oOptions = {}) {
   }, oOptions);
 }
 
+async function runCapSetupCommand(oOptions = {}) {
+  let oCapCore = getCapCore();
+
+  return await captureConsoleOutput(async () => {
+    await withNonInteractiveTerminal(async () => {
+      let oSetupResult = await oCapCore.capSetup({
+        cwd: oOptions.cwd || getWorkspaceRoot(),
+        appDisplayName: oOptions.appDisplayName,
+        description: oOptions.description
+      });
+      if (oSetupResult) {
+        console.log('CAP setup result: ' + JSON.stringify(oSetupResult));
+      }
+    });
+  }, oOptions);
+}
+
 async function runCapDebuggerCommand(oOptions = {}) {
   let oCapCore = getCapCore();
 
@@ -1190,6 +1207,10 @@ async function runCodeAppCommand(sCommand, oOptions = {}) {
 
   if (sPrimaryCommand === 'mockup') {
     return await runCapMockupCommand(aArgs, oOptions);
+  }
+
+  if (sPrimaryCommand === 'setup') {
+    return await runCapSetupCommand(oOptions);
   }
 
   if (sPrimaryCommand === 'deploy' || sPrimaryCommand === 'push') {
