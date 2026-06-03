@@ -9,6 +9,7 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 - Top editor buttons for `Debugger` and `Deploy`.
 - Bottom status bar actions for `Deploy`, `Debugger`, `Dataverse`, `Table`, `Flow`, `Mockup`, `Import`, `Setup`, `Env`, and `Auth`.
 - A packaged `codeapp` custom agent in the Copilot Chat agent picker, backed by the bundled `codeapp-js` agent and skill files.
+- A bundled `CAP` terminal command for VS Code integrated terminals, limited to Power Platform Code App workflows.
 - Project setup that copies starter files into your workspace and updates `power.config.json` through native VS Code input prompts.
 - Connection reference syncing against the active environment.
 - Code app import that lists available code apps in the selected environment, exports the chosen solution, and unpacks it into the workspace.
@@ -22,6 +23,8 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 - An open workspace folder.
 
 The extension runs its Power Platform commands through the packaged `codeapp-js-cli` dependency. The extension uses CAP authentication and environment APIs plus the Power Apps runner bundled with `codeapp-js-cli`, so no separate PAC installation or local wrapper is required.
+
+New VS Code integrated terminals automatically include the extension's bundled `CAP` command on `PATH`. The terminal shim exposes Power Platform Code App commands such as `CAP auth`, `CAP environment`, `CAP setup`, `CAP dataverse`, `CAP table`, `CAP flow`, `CAP connector`, `CAP import`, `CAP mockup`, and `CAP deploy`; GitHub Copilot commands such as `CAP copilot`, `CAP model`, `CAP skills`, `CAP instruction`, `CAP session`, `CAP edit`, and prompt/chat commands are intentionally excluded.
 
 ## Quick Start
 

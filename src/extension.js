@@ -1,5 +1,5 @@
 const vscode = require('vscode');
-const { checkAndInstallCodeAppCli } = require('./codeappCli');
+const { checkAndInstallCodeAppCli, configureCodeAppCliTerminalPath } = require('./codeappCli');
 const { setupProject, authenticate, changeEnvironment, deploy, importProject, openMockup, addDataverseTable, toggleDebugger, addDataverseSchema, addFlowSchema } = require('./commands');
 
 const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
@@ -119,6 +119,7 @@ function createStatusBarItems(oContext) {
 
 async function activate(oContext) {
   checkAndInstallCodeAppCli();
+  configureCodeAppCliTerminalPath(oContext);
 
   await vscode.commands.executeCommand('setContext', 'codeappjsext.buttonsVisible', getButtonsVisible(oContext));
 

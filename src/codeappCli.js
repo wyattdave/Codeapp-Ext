@@ -111,6 +111,36 @@ function getCodeAppCliCommand() {
   return 'node "' + sCliEntry + '"';
 }
 
+function getExtensionCliBinPath() {
+  return path.join(getExtensionRoot(), 'codeapp-cli', 'bin');
+}
+
+function getTerminalPathVariableName() {
+  if (process.platform === 'win32') {
+    return Object.prototype.hasOwnProperty.call(process.env, 'Path') ? 'Path' : 'PATH';
+  }
+
+  return 'PATH';
+}
+
+function configureCodeAppCliTerminalPath(oContext) {
+  if (!oContext || !oContext.environmentVariableCollection) {
+    return;
+  }
+
+  let sCliBinPath = getExtensionCliBinPath();
+  if (!fs.existsSync(sCliBinPath)) {
+    return;
+  }
+
+  let oCollection = oContext.environmentVariableCollection;
+  oCollection.clear();
+  if ('description' in oCollection) {
+    oCollection.description = 'Adds the bundled CAP command to VS Code terminals.';
+  }
+  oCollection.prepend(getTerminalPathVariableName(), sCliBinPath + path.delimiter);
+}
+
 function getPowerAppsCliAuthProviderPath() {
   return resolvePackageFile(S_POWER_APPS_PACKAGE, path.join('dist', 'Authentication', 'NodeMsalAuthenticationProvider.js'));
 }
@@ -1246,6 +1276,7 @@ function checkAndInstallCodeAppCli() {
 
 module.exports = {
   checkAndInstallCodeAppCli,
+  configureCodeAppCliTerminalPath,
   ensureCodeAppCliReady,
   runShellCommand,
   runCodeAppCommand,

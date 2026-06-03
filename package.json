@@ -2,7 +2,7 @@
   "name": "codeappjsext",
   "displayName": "CAP - Code Apps",
   "description": "VS Code wrapper for Power Apps Code App workflows using codeapp-js-cli",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "icon": "cap-icon.png",
   "publisher": "PowerDevBox",
   "repository": "https://github.com/wyattdave/Codeapp-Ext",
