@@ -1,6 +1,9 @@
 .github/**
 .vscode/**
 resources/**
+codeapp-cli/**
+agent*.svg
+icon-wire-pink.png
 *.vsix
 **/*.map
 .gitignore
@@ -24,6 +27,7 @@ packages/**
 **/*.mk
 **/*.log
 **/*.tgz
+node_modules/codeapp-js/codeApp/*.zip
 **/tsconfig*.json
 **/.eslint*
 **/.prettier*

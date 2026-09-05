@@ -1240,7 +1240,9 @@ function removeDirectoryIfExists(sDirectoryPath) {
 }
 
 function quoteShellArgument(sValue) {
-  return '"' + String(sValue || '').replace(new RegExp('"', 'g'), '\\"') + '"';
+  return '"' + String(sValue || '')
+    .replace(new RegExp('\\\\', 'g'), '\\\\')
+    .replace(new RegExp('"', 'g'), '\\"') + '"';
 }
 
 function buildDataverseTableFieldSpec(oField) {
@@ -1712,6 +1714,28 @@ async function addDataverseSchema(oPanel = null, sTableName = '') {
   }
 }
 
+async function addFlowSchemaById(sFlowId, sFlowLabel, oReporter) {
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Adding flow schema...', cancellable: false },
+      async () => {
+        oReporter.status('Running CAP flow...');
+        oReporter.log('Adding flow: ' + sFlowLabel + ' (' + sFlowId + ')');
+        await runLoggedCodeAppCommand('flow --' + sFlowId, oReporter);
+      }
+    );
+
+    let sMessage = 'Flow schema added for ' + sFlowLabel + '.';
+    oReporter.finish('done', sMessage);
+    vscode.window.showInformationMessage(sMessage);
+  } catch (oError) {
+    let sMessage = 'Add flow failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    vscode.window.showErrorMessage(sMessage);
+  }
+}
+
 async function addFlowSchema() {
   let oReporter = createCommandReporter(null, 'Flow Schema', 'Loading flows...');
   let aFlows = [];
@@ -1768,32 +1792,28 @@ async function addFlowSchema() {
     return;
   }
 
-  try {
-    let sRoot = getWorkspaceRoot();
-    let sWorkspacePowerDirectory = sRoot ? path.join(sRoot, '.power') : '';
-    let sWorkspaceSrcDirectory = sRoot ? path.join(sRoot, 'src') : '';
-    let bWorkspaceSrcDirectoryExisted = sWorkspaceSrcDirectory ? fs.existsSync(sWorkspaceSrcDirectory) : false;
-    let sFlowSchemaDirectory = getFlowSchemaDirectory();
-    let sAgentDirectory = getAgentDirectory();
+  await addFlowSchemaById(sFlowId, oSelectedFlow.label, oReporter);
+}
 
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Adding flow schema...', cancellable: false },
-      async () => {
-        oReporter.status('Running CAP flow...');
-        oReporter.log('Adding flow: ' + oSelectedFlow.label + ' (' + sFlowId + ')');
-        await runLoggedPowerAppsCommand('add-flow --flow-id ' + quoteShellArgument(sFlowId), oReporter);
-      }
-    );
+async function addFlowSchemaByPrompt() {
+  let sFlowId = await vscode.window.showInputBox({
+    title: 'Add Flow Schema by ID',
+    prompt: 'Power Automate flow ID',
+    placeHolder: '00000000-0000-0000-0000-000000000000',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => new RegExp('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', 'i').test(String(sValue || '').trim())
+      ? null
+      : 'A valid flow ID is required.'
+  });
 
-    let sMessage = 'Flow schema added for ' + oSelectedFlow.label + ' and moved to agent.';
-    oReporter.finish('done', sMessage);
-    vscode.window.showInformationMessage(sMessage);
-  } catch (oError) {
-    let sMessage = 'Add flow failed: ' + normalizeErrorMessage(oError);
-    oReporter.log(sMessage);
-    oReporter.finish('error', sMessage);
-    vscode.window.showErrorMessage(sMessage);
+  if (sFlowId === undefined) {
+    return;
   }
+
+  let sResolvedFlowId = sFlowId.trim();
+  let oReporter = createCommandReporter(null, 'Flow Schema', 'Adding flow schema...');
+  oReporter.start();
+  await addFlowSchemaById(sResolvedFlowId, sResolvedFlowId, oReporter);
 }
 
 async function setupProject(oContext) {
@@ -1948,16 +1968,17 @@ async function openPowerConfigFile(sConfigPath) {
   await vscode.window.showTextDocument(oDocument, vscode.ViewColumn.One);
 }
 
-async function authenticate() {
+async function runAuthenticationCommand(sArguments, sProgressTitle, sDefaultSuccessMessage) {
   let oReporter = createCommandReporter(null, 'Authentication', 'Starting sign-in...');
+  let sCommand = 'auth' + (sArguments ? ' ' + sArguments : '');
 
   try {
     oReporter.start();
     let sAuthOutput = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Sign in to Power Platform', cancellable: false },
+      { location: vscode.ProgressLocation.Notification, title: sProgressTitle, cancellable: false },
       async () => {
-        oReporter.status('Running CAP auth...');
-        return await runLoggedCodeAppCommand('auth', oReporter);
+        oReporter.status('Running CAP ' + sCommand + '...');
+        return await runLoggedCodeAppCommand(sCommand, oReporter);
       }
     );
 
@@ -1969,7 +1990,7 @@ async function authenticate() {
       /* Fall back to a generic success message if the wrapper output is not JSON. */
     }
 
-    let sMessage = sSignedInUser ? 'Signed in as ' + sSignedInUser + '.' : 'Authentication complete.';
+    let sMessage = sSignedInUser ? 'Signed in as ' + sSignedInUser + '.' : sDefaultSuccessMessage;
     oReporter.log(sMessage);
     oReporter.finish('done', sMessage);
     vscode.window.showInformationMessage(sMessage);
@@ -1979,6 +2000,18 @@ async function authenticate() {
     oReporter.finish('error', sMessage);
     vscode.window.showErrorMessage(sMessage);
   }
+}
+
+async function authenticate() {
+  await runAuthenticationCommand('', 'Sign in to Power Platform', 'Authentication complete.');
+}
+
+async function changeAuthentication() {
+  await runAuthenticationCommand('--change', 'Change Power Platform account', 'Power Platform account changed.');
+}
+
+async function logoutAuthentication() {
+  await runAuthenticationCommand('--logout', 'Sign out of Power Platform', 'Signed out of Power Platform.');
 }
 
 async function changeEnvironment(oContext = null) {
@@ -2391,6 +2424,124 @@ async function openMockup() {
   }
 }
 
+function validateJsonObjectInput(sValue) {
+  try {
+    let oValue = JSON.parse(String(sValue || ''));
+    return oValue && typeof oValue === 'object' && !Array.isArray(oValue)
+      ? null
+      : 'Value must be a JSON object.';
+  } catch (oError) {
+    return 'Value must be valid JSON.';
+  }
+}
+
+async function addEnvironmentVariable() {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  let sName = await vscode.window.showInputBox({
+    title: 'Create Environment Variable',
+    prompt: 'Environment variable display name',
+    placeHolder: 'Application settings',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => sValue && sValue.trim() ? null : 'Environment variable name is required.'
+  });
+  if (sName === undefined) {
+    return;
+  }
+
+  let sPublisherPrefix = await vscode.window.showInputBox({
+    title: 'Create Environment Variable',
+    prompt: 'Dataverse publisher prefix',
+    value: 'new',
+    ignoreFocusOut: true,
+    validateInput: (sValue) => new RegExp('^[A-Za-z0-9]+$').test(String(sValue || '').trim())
+      ? null
+      : 'Publisher prefix must contain only letters and numbers.'
+  });
+  if (sPublisherPrefix === undefined) {
+    return;
+  }
+
+  let sJsonValue = await vscode.window.showInputBox({
+    title: 'Create Environment Variable',
+    prompt: 'JSON object value',
+    value: '{}',
+    ignoreFocusOut: true,
+    validateInput: validateJsonObjectInput
+  });
+  if (sJsonValue === undefined) {
+    return;
+  }
+
+  let oReporter = createCommandReporter(null, 'Environment Variable', 'Creating environment variable...');
+  let sCommand = 'environment-variable --name ' + quoteShellArgument(sName.trim()) +
+    ' --publisher-prefix ' + quoteShellArgument(sPublisherPrefix.trim()) +
+    ' --value ' + quoteShellArgument(JSON.stringify(JSON.parse(sJsonValue)));
+
+  try {
+    oReporter.start();
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Creating environment variable...', cancellable: false },
+      async () => {
+        await runLoggedCodeAppCommand(sCommand, oReporter, { bReturnCombinedOutput: true });
+      }
+    );
+
+    let sMessage = 'Environment variable created for ' + sName.trim() + '.';
+    oReporter.finish('done', sMessage);
+    vscode.window.showInformationMessage(sMessage);
+  } catch (oError) {
+    let sMessage = 'Environment variable failed: ' + normalizeErrorMessage(oError);
+    oReporter.log(sMessage);
+    oReporter.finish('error', sMessage);
+    oReporter.show();
+    vscode.window.showErrorMessage(sMessage);
+  }
+}
+
+async function openSkills() {
+  let bReady = await ensureCodeAppCliReady();
+  if (!bReady) {
+    return;
+  }
+
+  try {
+    let sSkillsOutput = await runCodeAppCommand('skills');
+    let aSkills = tryParseJsonText(sSkillsOutput);
+    if (!Array.isArray(aSkills) || aSkills.length === 0) {
+      throw new Error('No bundled skills were found.');
+    }
+
+    let oSelectedSkill = await vscode.window.showQuickPick(
+      aSkills.map((oSkill) => ({
+        label: String(oSkill.name || path.basename(oSkill.filePath || 'Skill')),
+        description: String(oSkill.relativePath || ''),
+        detail: String(oSkill.summary || ''),
+        oSkill: oSkill
+      })),
+      {
+        title: 'CAP Skills',
+        placeHolder: 'Select a bundled skill to open',
+        ignoreFocusOut: true,
+        matchOnDescription: true,
+        matchOnDetail: true
+      }
+    );
+
+    if (!oSelectedSkill) {
+      return;
+    }
+
+    let oDocument = await vscode.workspace.openTextDocument(oSelectedSkill.oSkill.filePath);
+    await vscode.window.showTextDocument(oDocument, vscode.ViewColumn.One);
+  } catch (oError) {
+    vscode.window.showErrorMessage('Skills failed: ' + normalizeErrorMessage(oError));
+  }
+}
+
 async function addDataverseTable() {
   let bReady = await ensureCodeAppCliReady();
   if (!bReady) {
@@ -2432,4 +2583,4 @@ async function addDataverseTable() {
   }
 }
 
-module.exports = { setupProject, authenticate, changeEnvironment, applyEnvironmentSelection, deploy, importProject, openMockup, addDataverseTable, toggleDebugger, addDataverseSchema, addFlowSchema };
+module.exports = { setupProject, authenticate, changeAuthentication, logoutAuthentication, changeEnvironment, applyEnvironmentSelection, deploy, importProject, openMockup, openSkills, addDataverseTable, addEnvironmentVariable, toggleDebugger, addDataverseSchema, addFlowSchema, addFlowSchemaByPrompt };

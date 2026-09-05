@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs');
 
 const S_CODEAPP_JS_CLI_PACKAGE = 'codeapp-js-cli';
-const S_POWER_APPS_PACKAGE = '@microsoft/power-apps-cli';
 const S_CAP_COMMAND = 'cap';
 
 let sCachedCliRoot = null;
@@ -41,10 +40,6 @@ function getPackageRoot(sPackageName) {
 
     throw oError;
   }
-}
-
-function resolvePackageFile(sPackageName, sRelativePath) {
-  return path.join(getPackageRoot(sPackageName), sRelativePath);
 }
 
 function getPackageBinEntryPath(sPackageRoot, sCommandName) {
@@ -111,141 +106,16 @@ function getCodeAppCliCommand() {
   return 'node "' + sCliEntry + '"';
 }
 
-function getExtensionCliBinPath() {
-  return path.join(getExtensionRoot(), 'codeapp-cli', 'bin');
-}
-
-function getTerminalPathVariableName() {
-  if (process.platform === 'win32') {
-    return Object.prototype.hasOwnProperty.call(process.env, 'Path') ? 'Path' : 'PATH';
-  }
-
-  return 'PATH';
-}
-
 function configureCodeAppCliTerminalPath(oContext) {
   if (!oContext || !oContext.environmentVariableCollection) {
-    return;
-  }
-
-  let sCliBinPath = getExtensionCliBinPath();
-  if (!fs.existsSync(sCliBinPath)) {
     return;
   }
 
   let oCollection = oContext.environmentVariableCollection;
   oCollection.clear();
   if ('description' in oCollection) {
-    oCollection.description = 'Adds the bundled CAP command to VS Code terminals.';
+    oCollection.description = 'The bundled CAP CLI is available only through CodeAppJS extension commands.';
   }
-  oCollection.prepend(getTerminalPathVariableName(), sCliBinPath + path.delimiter);
-}
-
-function getPowerAppsCliAuthProviderPath() {
-  return resolvePackageFile(S_POWER_APPS_PACKAGE, path.join('dist', 'Authentication', 'NodeMsalAuthenticationProvider.js'));
-}
-
-function ensurePowerAppsCliAuthFallbackPatched() {
-  let sAuthProviderPath = getPowerAppsCliAuthProviderPath();
-  let sContent = fs.readFileSync(sAuthProviderPath, 'utf8');
-  if (sContent.indexOf('createExtensionFileBackedMsalCachePlugin') !== -1) {
-    return;
-  }
-
-  let sImports = "import { InteractionRequiredAuthError, PublicClientApplication } from '@azure/msal-node';\n";
-  let sPatchedImports = "import fs from 'node:fs/promises';\n" +
-    "import path from 'node:path';\n" +
-    sImports;
-  let sHelper = "function isExtensionNativeAuthError(error) {\n" +
-    "    const details = `${error?.code || ''} ${error?.message || ''} ${error?.stack || ''}`.toLowerCase();\n" +
-    "    return details.includes('keytar') || details.includes('msal-node-extensions') || details.includes('native build') || details.includes('build/release') || error?.code === 'MODULE_NOT_FOUND' || error?.code === 'ERR_DLOPEN_FAILED';\n" +
-    "}\n" +
-    "function createExtensionFileBackedMsalCachePlugin(cachePath) {\n" +
-    "    return {\n" +
-    "        beforeCacheAccess: async (cacheContext) => {\n" +
-    "            try {\n" +
-    "                const cacheContents = await fs.readFile(cachePath, 'utf8');\n" +
-    "                try {\n" +
-    "                    cacheContext.tokenCache.deserialize(cacheContents);\n" +
-    "                }\n" +
-    "                catch {\n" +
-    "                    await fs.rm(cachePath, { force: true });\n" +
-    "                }\n" +
-    "            }\n" +
-    "            catch (error) {\n" +
-    "                if (error?.code !== 'ENOENT') {\n" +
-    "                    throw error;\n" +
-    "                }\n" +
-    "            }\n" +
-    "        },\n" +
-    "        afterCacheAccess: async (cacheContext) => {\n" +
-    "            if (!cacheContext.cacheHasChanged) {\n" +
-    "                return;\n" +
-    "            }\n" +
-    "            await fs.mkdir(path.dirname(cachePath), { recursive: true });\n" +
-    "            await fs.writeFile(cachePath, cacheContext.tokenCache.serialize(), 'utf8');\n" +
-    "        },\n" +
-    "    };\n" +
-    "}\n";
-  let sOriginalInit = "    async initAsync(region) {\n" +
-    "        this._region = region;\n" +
-    "        const { DataProtectionScope, PersistenceCachePlugin, PersistenceCreator } = await import('@azure/msal-node-extensions');\n" +
-    "        const persistenceConfiguration = {\n" +
-    "            cachePath: AUTH_CACHE_DIRECTORY + '/msal_cache.json',\n" +
-    "            dataProtectionScope: DataProtectionScope.CurrentUser,\n" +
-    "            serviceName: 'power-apps',\n" +
-    "            accountName: 'power-apps',\n" +
-    "            usePlaintextFileOnLinux: false,\n" +
-    "        };\n" +
-    "        const persistence = await PersistenceCreator.createPersistence(persistenceConfiguration);\n" +
-    "        const authConfig = {\n" +
-    "            auth: {\n" +
-    "                authority: getAuthority(this._region, this._tenantId),\n" +
-    "                clientId: '9cee029c-6210-4654-90bb-17e6e9d36617',\n" +
-    "            },\n" +
-    "            cache: {\n" +
-    "                cachePlugin: new PersistenceCachePlugin(persistence),\n" +
-    "            },\n" +
-    "        };\n" +
-    "        this._msalClient = new PublicClientApplication(authConfig);\n" +
-    "    }";
-  let sPatchedInit = "    async initAsync(region) {\n" +
-    "        this._region = region;\n" +
-    "        const cachePath = AUTH_CACHE_DIRECTORY + '/msal_cache.json';\n" +
-    "        let cachePlugin;\n" +
-    "        try {\n" +
-    "            const { DataProtectionScope, PersistenceCachePlugin, PersistenceCreator } = await import('@azure/msal-node-extensions');\n" +
-    "            const persistence = await PersistenceCreator.createPersistence({\n" +
-    "                cachePath,\n" +
-    "                dataProtectionScope: DataProtectionScope.CurrentUser,\n" +
-    "                serviceName: 'power-apps',\n" +
-    "                accountName: 'power-apps',\n" +
-    "                usePlaintextFileOnLinux: false,\n" +
-    "            });\n" +
-    "            cachePlugin = new PersistenceCachePlugin(persistence);\n" +
-    "        }\n" +
-    "        catch (error) {\n" +
-    "            if (!isExtensionNativeAuthError(error)) {\n" +
-    "                throw error;\n" +
-    "            }\n" +
-    "            cachePlugin = createExtensionFileBackedMsalCachePlugin(cachePath);\n" +
-    "        }\n" +
-    "        const authConfig = {\n" +
-    "            auth: {\n" +
-    "                authority: getAuthority(this._region, this._tenantId),\n" +
-    "                clientId: '9cee029c-6210-4654-90bb-17e6e9d36617',\n" +
-    "            },\n" +
-    "            cache: { cachePlugin },\n" +
-    "        };\n" +
-    "        this._msalClient = new PublicClientApplication(authConfig);\n" +
-    "    }";
-
-  let sUpdatedContent = sContent.replace(sImports, sPatchedImports).replace('export class NodeMsalAuthenticationProvider {', sHelper + 'export class NodeMsalAuthenticationProvider {').replace(sOriginalInit, sPatchedInit);
-  if (sUpdatedContent === sContent) {
-    throw new Error('Unable to patch Power Apps CLI authentication fallback.');
-  }
-
-  fs.writeFileSync(sAuthProviderPath, sUpdatedContent, 'utf8');
 }
 
 function getWorkspaceRoot() {
@@ -954,7 +824,6 @@ function normalizeCodeAppRecordForOutput(oCodeApp) {
 }
 
 async function runCapFlowListCommand(oOptions = {}) {
-  ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
   let aCapturedFlows = [];
 
@@ -981,7 +850,6 @@ async function runCapFlowListCommand(oOptions = {}) {
 }
 
 async function runCapFlowCommand(aArgs, oOptions = {}) {
-  ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
   let sPrimaryCommand = String(aArgs[0] || '').toLowerCase();
 
@@ -1025,8 +893,40 @@ async function runCapFlowCommand(aArgs, oOptions = {}) {
   }, oOptions);
 }
 
+async function runCapEnvironmentVariableCommand(aArgs, oOptions = {}) {
+  let oCapCore = getCapCore();
+  let aEnvironmentVariableArgs = aArgs[0] === 'environment-variable' ? aArgs.slice(1) : aArgs.slice();
+
+  return await captureConsoleOutput(async () => {
+    await withNonInteractiveTerminal(async () => {
+      await oCapCore.capEnvironmentVariable(aEnvironmentVariableArgs, {
+        cwd: oOptions.cwd || getWorkspaceRoot()
+      });
+    });
+  }, oOptions);
+}
+
+async function runCapSkillsListCommand(oOptions = {}) {
+  let oCapCore = getCapCore();
+  let aCapturedSkills = [];
+
+  await withMutedConsole(async () => {
+    oTerminalSelectorState.fnCaptureItems = (aItems) => {
+      aCapturedSkills = Array.isArray(aItems) ? aItems : [];
+    };
+
+    try {
+      await oCapCore.capSkills('', { cwd: oOptions.cwd || getWorkspaceRoot() });
+    } finally {
+      oTerminalSelectorState.fnCaptureItems = null;
+    }
+  });
+
+  let sOutput = JSON.stringify(aCapturedSkills, null, 2) + '\n';
+  return writeCommandOutput(sOutput, oOptions);
+}
+
 async function runCapExportListCommand(oNamedArgs = {}, oOptions = {}) {
-  ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
   let aCapturedCodeApps = [];
 
@@ -1052,7 +952,6 @@ async function runCapExportListCommand(oNamedArgs = {}, oOptions = {}) {
 }
 
 async function runCapExportCommand(aArgs, oOptions = {}) {
-  ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
   let aExportArgs = aArgs[0] === 'export' ? aArgs.slice(1) : aArgs.slice();
   let oParsed = getCapParsedInput(aExportArgs, {
@@ -1117,7 +1016,6 @@ async function runCapMockupCommand(aArgs, oOptions = {}) {
 }
 
 async function runCapDeployCommand(aArgs, oOptions = {}) {
-  ensurePowerAppsCliAuthFallbackPatched();
   let oCapCore = getCapCore();
   let aDeployArgs = aArgs[0] === 'deploy' || aArgs[0] === 'push' ? aArgs.slice(1) : aArgs.slice();
   let oParsed = getCapParsedInput(aDeployArgs, {
@@ -1229,6 +1127,14 @@ async function runCodeAppCommand(sCommand, oOptions = {}) {
 
   if (sPrimaryCommand === 'flow' || sPrimaryCommand === 'list-flows' || sPrimaryCommand === 'add-flow') {
     return await runCapFlowCommand(aArgs, oOptions);
+  }
+
+  if (sPrimaryCommand === 'environment-variable') {
+    return await runCapEnvironmentVariableCommand(aArgs, oOptions);
+  }
+
+  if (sPrimaryCommand === 'skills' && aArgs.length === 1) {
+    return await runCapSkillsListCommand(oOptions);
   }
 
   if (sPrimaryCommand === 'export') {

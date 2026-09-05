@@ -1,6 +1,6 @@
 const vscode = require('vscode');
 const { checkAndInstallCodeAppCli, configureCodeAppCliTerminalPath } = require('./codeappCli');
-const { setupProject, authenticate, changeEnvironment, deploy, importProject, openMockup, addDataverseTable, toggleDebugger, addDataverseSchema, addFlowSchema } = require('./commands');
+const { setupProject, authenticate, changeAuthentication, logoutAuthentication, changeEnvironment, deploy, importProject, openMockup, openSkills, addDataverseTable, addEnvironmentVariable, toggleDebugger, addDataverseSchema, addFlowSchema, addFlowSchemaByPrompt } = require('./commands');
 
 const S_ENVIRONMENT_STORAGE_KEY = 'selectedEnvironmentId';
 const S_BUTTONS_VISIBLE_STORAGE_KEY = 'buttonsVisible';
@@ -76,6 +76,11 @@ function createStatusBarItems(oContext) {
   oTableItem.text = '$(table) Table';
   oTableItem.tooltip = 'Run CAP table to create a Dataverse table';
 
+  let oEnvironmentVariableItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 107.5);
+  oEnvironmentVariableItem.command = 'codeappjsext.environmentVariable';
+  oEnvironmentVariableItem.text = '$(symbol-variable) Env Var';
+  oEnvironmentVariableItem.tooltip = 'Create a Dataverse JSON environment variable';
+
   let oFlowItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 107);
   oFlowItem.command = 'codeappjsext.flowSchema';
   oFlowItem.text = '$(references) Flow';
@@ -109,12 +114,12 @@ function createStatusBarItems(oContext) {
   oButtonsToggleItem.command = 'codeappjsext.toggleButtonVisibility';
 
   let bVisible = getButtonsVisible(oContext);
-  let aActionItems = [oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem];
+  let aActionItems = [oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oEnvironmentVariableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem];
   updateButtonsToggleStatusItem(oButtonsToggleItem, bVisible);
   setActionItemsVisibility(bVisible, aActionItems);
   oButtonsToggleItem.show();
 
-  return { oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem, oButtonsToggleItem };
+  return { oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oEnvironmentVariableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem, oButtonsToggleItem };
 }
 
 async function activate(oContext) {
@@ -123,7 +128,7 @@ async function activate(oContext) {
 
   await vscode.commands.executeCommand('setContext', 'codeappjsext.buttonsVisible', getButtonsVisible(oContext));
 
-  let { oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem, oButtonsToggleItem } = createStatusBarItems(oContext);
+  let { oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oEnvironmentVariableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem, oButtonsToggleItem } = createStatusBarItems(oContext);
 
   let oSetupDisposable = vscode.commands.registerCommand('codeappjsext.setup', async () => {
     await setupProject(oContext);
@@ -141,6 +146,14 @@ async function activate(oContext) {
     await authenticate();
   });
 
+  let oAuthChangeDisposable = vscode.commands.registerCommand('codeappjsext.authChange', async () => {
+    await changeAuthentication();
+  });
+
+  let oAuthLogoutDisposable = vscode.commands.registerCommand('codeappjsext.authLogout', async () => {
+    await logoutAuthentication();
+  });
+
   let oEnvironmentDisposable = vscode.commands.registerCommand('codeappjsext.environment', async () => {
     await changeEnvironment(oContext);
     updateEnvironmentStatusItem(oEnvironmentItem, oContext);
@@ -149,7 +162,7 @@ async function activate(oContext) {
   let oToggleButtonsDisposable = vscode.commands.registerCommand('codeappjsext.toggleButtonVisibility', async () => {
     let bVisible = !getButtonsVisible(oContext);
     await applyButtonsVisibleState(bVisible, oContext);
-    setActionItemsVisibility(bVisible, [oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem]);
+    setActionItemsVisibility(bVisible, [oDeployItem, oDebuggerItem, oDataverseItem, oTableItem, oEnvironmentVariableItem, oFlowItem, oMockupItem, oImportItem, oSetupItem, oEnvironmentItem, oAuthItem]);
     updateButtonsToggleStatusItem(oButtonsToggleItem, bVisible);
   });
 
@@ -173,8 +186,20 @@ async function activate(oContext) {
     await addDataverseTable();
   });
 
+  let oEnvironmentVariableDisposable = vscode.commands.registerCommand('codeappjsext.environmentVariable', async () => {
+    await addEnvironmentVariable();
+  });
+
   let oFlowSchemaDisposable = vscode.commands.registerCommand('codeappjsext.flowSchema', async () => {
     await addFlowSchema();
+  });
+
+  let oFlowSchemaByIdDisposable = vscode.commands.registerCommand('codeappjsext.flowSchemaById', async () => {
+    await addFlowSchemaByPrompt();
+  });
+
+  let oSkillsDisposable = vscode.commands.registerCommand('codeappjsext.skills', async () => {
+    await openSkills();
   });
 
   let oDebuggerDisposable = vscode.commands.registerCommand('codeappjsext.debugger', async () => {
@@ -190,17 +215,23 @@ async function activate(oContext) {
     oImportDisposable,
     oMockupDisposable,
     oAuthDisposable,
+    oAuthChangeDisposable,
+    oAuthLogoutDisposable,
     oEnvironmentDisposable,
     oToggleButtonsDisposable,
     oConnectionsDisposable,
     oTableDisposable,
+    oEnvironmentVariableDisposable,
     oFlowSchemaDisposable,
+    oFlowSchemaByIdDisposable,
+    oSkillsDisposable,
     oDebuggerDisposable,
     oDeployDisposable,
     oDeployItem,
     oDebuggerItem,
     oDataverseItem,
     oTableItem,
+    oEnvironmentVariableItem,
     oFlowItem,
     oMockupItem,
     oImportItem,

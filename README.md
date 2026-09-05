@@ -7,9 +7,9 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 ## What You Get
 
 - Top editor buttons for `Debugger` and `Deploy`.
-- Bottom status bar actions for `Deploy`, `Debugger`, `Dataverse`, `Table`, `Flow`, `Mockup`, `Import`, `Setup`, `Env`, and `Auth`.
+- Bottom status bar actions for `Deploy`, `Debugger`, `Dataverse`, `Table`, `Env Var`, `Flow`, `Mockup`, `Import`, `Setup`, `Env`, and `Auth`.
 - A packaged `codeapp` custom agent in the Copilot Chat agent picker, backed by the bundled `codeapp-js` agent and skill files.
-- A bundled `CAP` terminal command for VS Code integrated terminals, limited to Power Platform Code App workflows.
+- Extension commands backed by the bundled `codeapp-js-cli`, without changing terminal `PATH`.
 - Project setup that copies starter files into your workspace and updates `power.config.json` through native VS Code input prompts.
 - Connection reference syncing against the active environment.
 - Code app import that lists available code apps in the selected environment, exports the chosen solution, and unpacks it into the workspace.
@@ -22,16 +22,16 @@ This extension is built on [codeapp.js](https://codeappjs.com), which is aimed a
 - VS Code `1.95.0` or newer.
 - An open workspace folder.
 
-The extension runs its Power Platform commands through the packaged `codeapp-js-cli` dependency. The extension uses CAP authentication and environment APIs plus the Power Apps runner bundled with `codeapp-js-cli`, so no separate PAC installation or local wrapper is required.
+The extension runs its Power Platform commands through the packaged `codeapp-js-cli` dependency. The extension uses CAP authentication and environment APIs plus the Power Apps runner bundled with `codeapp-js-cli`, so no separate PAC installation or local wrapper is required for extension commands.
 
-New VS Code integrated terminals automatically include the extension's bundled `CAP` command on `PATH`. The terminal shim exposes Power Platform Code App commands such as `CAP auth`, `CAP environment`, `CAP setup`, `CAP dataverse`, `CAP table`, `CAP flow`, `CAP connector`, `CAP import`, `CAP mockup`, and `CAP deploy`; GitHub Copilot commands such as `CAP copilot`, `CAP model`, `CAP skills`, `CAP instruction`, `CAP session`, `CAP edit`, and prompt/chat commands are intentionally excluded.
+The extension does not add its bundled CLI to terminal `PATH`. To use `CAP` directly in a terminal, install `codeapp-js-cli` separately.
 
 ## Quick Start
 
 1. Open the folder that will contain your Power Platform code-first app.
 2. Click the `Auth` status bar item to start CAP authentication through the bundled CLI.
 3. Click the environment status bar item to select the target environment.
-4. Use the bottom status bar actions for `Setup`, `Dataverse`, `Table`, `Flow`, `Mockup`, and `Import` as needed.
+4. Use the bottom status bar actions for `Setup`, `Dataverse`, `Table`, `Env Var`, `Flow`, `Mockup`, and `Import` as needed.
 5. Use the top editor buttons for `Debugger` and `Deploy`.
 
 ## Command Surface
@@ -41,10 +41,15 @@ New VS Code integrated terminals automatically include the extension's bundled `
 | `CodeAppJS: Setup Project` | Copies the bundled template files into the workspace and updates `power.config.json`. |
 | `CodeAppJS: Import Code App` | Lists code apps in the selected environment, exports the selected solution, and unpacks it into the workspace. |
 | `CodeAppJS: Authenticate` | Starts CAP authentication through the bundled `codeapp-js-cli` so you can sign in to Power Platform. |
+| `CodeAppJS: Change Authentication Account` | Runs `CAP auth --change` to clear cached authentication and show the account picker. |
+| `CodeAppJS: Log Out` | Runs `CAP auth --logout` to clear the cached Power Platform login. |
 | `CodeAppJS: Change Environment` | Lists environments, switches the active org selection, stores the selection locally, and updates `power.config.json` when possible. |
 | `CodeAppJS: Add Dataverse Schema` | Prompts for a Dataverse table logical name and generates the matching schema into the agent folder. |
 | `CodeAppJS: Add Dataverse Table` | Uses VS Code input prompts to collect table metadata and optional fields, then creates the Dataverse table through `cap table`. |
+| `CodeAppJS: Add Environment Variable` | Collects a name, publisher prefix, and JSON value, then runs `CAP environment-variable`. |
 | `CodeAppJS: Add Flow Schema` | Lists flows through the packaged `codeapp-js-cli` Power Apps runner, lets you filter them with Quick Pick search, and adds the selected flow schema in non-interactive mode. |
+| `CodeAppJS: Add Flow Schema by ID` | Prompts for a flow ID and runs `CAP flow --<flow-id>` directly. |
+| `CodeAppJS: Skills` | Lists the skills bundled with `codeapp-js` and opens the selected skill file. |
 | `CodeAppJS: Open Mockup` | Lists HTML mockups under `agent/` and opens the selected mockup in the default browser. |
 | `CodeAppJS: Toggle Debugger` | Adds or removes the codeapp debugger snippet from the current build entry point. |
 | `CodeAppJS: Deploy` | Runs the packaged Power Apps push command through `codeapp-js-cli`, reports progress, and stores the detected `appId` in `power.config.json` when available. |
@@ -70,3 +75,4 @@ When you run project setup, the extension copies files from its bundled template
 ## Version
 - v1.1.2 - launch version using CodeApps-JS v1.1.2
 - v2.0.0 - update to CodeApps-JS v2.0.0. Removed PowerPlatform CLI dependency and migrated to power-apps-cli npm version to allow deploying apps that call flows.
+- v2.1.2 - added environment-variable, auth account change/logout, direct flow ID, and skills commands; stopped exposing the bundled CAP executable in terminals.
