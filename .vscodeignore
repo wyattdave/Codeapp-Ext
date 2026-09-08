@@ -1,6 +1,6 @@
 .github/**
 .vscode/**
-resources/**
+scripts/**
 codeapp-cli/**
 agent*.svg
 icon-wire-pink.png
@@ -27,7 +27,6 @@ packages/**
 **/*.mk
 **/*.log
 **/*.tgz
-node_modules/codeapp-js/codeApp/*.zip
 **/tsconfig*.json
 **/.eslint*
 **/.prettier*
@@ -58,3 +57,5 @@ node_modules/codeapp-js/codeApp/*.zip
 **/node_modules/**/binding.Makefile
 **/node_modules/@github/**
 !node_modules/codeapp-js/AI/**
+!node_modules/codeapp-js/codeApp/**
+node_modules/codeapp-js/codeApp/*.zip
