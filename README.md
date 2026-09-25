@@ -56,7 +56,7 @@ The extension does not add its bundled CLI to terminal `PATH`. To use `CAP` dire
 
 ## Setup Behavior
 
-When you run project setup, the extension copies files from its bundled template folder into your workspace.
+When you run project setup, the bundled `codeapp-js-cli` copies the `codeApp/` template from the bundled `codeapp-js` npm package into your workspace. Agents, skills (including their supporting files), and starter app files all come from that same package; the extension has no separate resources copy.
 
 - Existing files are not overwritten.
 - If `power.config.json` is copied, the extension asks for app metadata and environment information with native input boxes.
@@ -72,7 +72,22 @@ When you run project setup, the extension copies files from its bundled template
 - Deploy captures command output, looks for the Power Apps URL, and stores the detected `appId` in `power.config.json` when possible.
 - Data source sync reads `connectionReferences`, selects the configured environment if one is set, inspects available connections, and updates reference metadata in `power.config.json`.
 
+## Packaging a Release
+
+1. Install dependencies with `npm ci`.
+2. Set the extension release version in `package.json`.
+3. Run `npm run package` (or `npm run package:win32-x64`).
+
+The VSCE prepublish lifecycle installs `codeapp-js@latest`, records the exact resolved version in the manifest and lockfile, then discovers and registers all agent and skill files from its `AI/` directory. A dependency override keeps `codeapp-js-cli` on the same SDK version. Missing agents, skills, or essential template files fail the build instead of silently producing an incomplete extension. Commit the updated manifest and lockfile with the release.
+
+Packaging requires npm registry access; a failed refresh stops the release rather than falling back to stale assets. Do not disable npm lifecycle scripts or skip the prepublish hook. Direct `vsce package` and `vsce publish` also run this refresh; specify `--target win32-x64` when using VSCE directly.
+
+“Latest” means the npm `latest` release at packaging time. Installed extensions use those bundled assets without downloading executable updates at activation. Publish and install a new extension release to distribute newer SDK assets, then reload VS Code and start a fresh chat to use the updated agent.
+
+Development scripts, tests, SDK examples, and redundant template ZIP archives are excluded from the VSIX. The SDK's full `AI/` and unpacked `codeApp/` assets are retained, including skill supporting documents that would otherwise match generic documentation exclusions.
+
 ## Version
+- v2.1.6 - removed unused resources; refresh codeapp-js to latest on each release, automatically register its agents and skills, and keep setup templates on the same SDK version.
 - v1.1.2 - launch version using CodeApps-JS v1.1.2
 - v2.0.0 - update to CodeApps-JS v2.0.0. Removed PowerPlatform CLI dependency and migrated to power-apps-cli npm version to allow deploying apps that call flows.
 - v2.1.2 - added environment-variable, auth account change/logout, direct flow ID, and skills commands; stopped exposing the bundled CAP executable in terminals.
