@@ -76,3 +76,4 @@ When you run project setup, the extension copies files from its bundled template
 - v1.1.2 - launch version using CodeApps-JS v1.1.2
 - v2.0.0 - update to CodeApps-JS v2.0.0. Removed PowerPlatform CLI dependency and migrated to power-apps-cli npm version to allow deploying apps that call flows.
 - v2.1.2 - added environment-variable, auth account change/logout, direct flow ID, and skills commands; stopped exposing the bundled CAP executable in terminals.
+- v2.2.0 - updated to codeapp-js v2.3.0 and codeapp-js-cli v1.3.0
